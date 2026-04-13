@@ -1,5 +1,5 @@
 using UnityEngine;
-using TMPro; // Necesario para la UI
+using TMPro;
 
 public class MenuController : MonoBehaviour
 {
@@ -7,39 +7,46 @@ public class MenuController : MonoBehaviour
     public TMP_InputField playerNameInput;
     public TMP_InputField roomNameInput;
 
-    public void OnClickCreateRoom()
+    // Botón: Crear o Unirse a una sala escribiendo el nombre
+    public void OnClickCreateOrJoinRoom()
     {
-        if (ValidateInputs())
+        if (ValidatePlayerName() && ValidateRoomName())
         {
-            // 1. Guardamos el nombre en el NetworkManager
             NetworkManager.Instance.LocalPlayerName = playerNameInput.text;
-
-            // 2. Le decimos al NetworkManager que cree la sala
-            NetworkManager.Instance.StartHost(roomNameInput.text);
+            NetworkManager.Instance.CreateOrJoinRoom(roomNameInput.text);
         }
     }
 
-    public void OnClickJoinRoom()
+    // Botón: Quick Join (Entrar a la primera sala que pille)
+    public void OnClickQuickJoin()
     {
-        if (ValidateInputs())
+        if (ValidatePlayerName())
         {
             NetworkManager.Instance.LocalPlayerName = playerNameInput.text;
-            NetworkManager.Instance.StartClient(roomNameInput.text);
+            NetworkManager.Instance.QuickJoinRoom();
         }
     }
 
     public void OnClickQuit()
     {
-        Debug.Log("Saliendo del juego...");
         Application.Quit();
     }
 
-    // Peque�a ayuda para evitar que los jugadores entren sin nombre o sin sala
-    private bool ValidateInputs()
+    private bool ValidatePlayerName()
     {
-        if (string.IsNullOrEmpty(playerNameInput.text) || string.IsNullOrEmpty(roomNameInput.text))
+        if (string.IsNullOrEmpty(playerNameInput.text))
         {
-            Debug.LogWarning("�Falta el nombre del jugador o de la sala!");
+            Debug.LogWarning("¡Falta el nombre del jugador!");
+            return false;
+        }
+        return true;
+    }
+
+    private bool ValidateRoomName()
+    {
+        if (string.IsNullOrEmpty(roomNameInput.text))
+        {
+            Debug.LogWarning("¡Falta el nombre de la sala!");
             return false;
         }
         return true;
