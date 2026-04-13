@@ -34,12 +34,12 @@ public class MenuController : MonoBehaviour
         Application.Quit();
     }
 
-    // Pequeña ayuda para evitar que los jugadores entren sin nombre o sin sala
+    // Pequeï¿½a ayuda para evitar que los jugadores entren sin nombre o sin sala
     private bool ValidateInputs()
     {
         if (string.IsNullOrEmpty(playerNameInput.text) || string.IsNullOrEmpty(roomNameInput.text))
         {
-            Debug.LogWarning("¡Falta el nombre del jugador o de la sala!");
+            Debug.LogWarning("ï¿½Falta el nombre del jugador o de la sala!");
             return false;
         }
         return true;

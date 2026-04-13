@@ -1,10 +1,10 @@
 using UnityEngine;
 using Fusion;
+using UnityEngine.SceneManagement;
 
 public class NetworkManager : MonoBehaviour
 {
-   
-    //Patron Singleton : 
+    // Patrón Singleton
     public static NetworkManager Instance { get; private set; }
 
     public NetworkRunner Runner { get; private set; }
@@ -12,48 +12,53 @@ public class NetworkManager : MonoBehaviour
 
     private void Awake()
     {
-        //gestion de singleton y ddol
-
+        // 1. Gestión de Singleton y DDOL
         if (Instance != null && Instance != this)
         {
-            Destroy ( gameObject );
+            Destroy(gameObject);
             return;
         }
 
         Instance = this;
-        DontDestroyOnLoad (gameObject);
+        DontDestroyOnLoad(gameObject);
 
-        //creacion runner
-
-        if (Runner != null)
+        // 2. Creación del Runner
+        // (Corregido: Ahora dice == null)
+        if (Runner == null)
         {
-            Runner = gameObject.AddComponent<NetworkRunner> ();
+            Runner = gameObject.AddComponent<NetworkRunner>();
 
-            //fusion necesita un scena manager para cambiar de escena
-
+            // Fusion necesita un scene manager para cambiar de escena
             gameObject.AddComponent<NetworkSceneManagerDefault>();
 
-            //decir al runer que este cinete manda inputs
-
+            // Decir al runner que este cliente manda inputs
             Runner.ProvideInput = true;
-
         }
-
     }
 
-    // crear sala como host
+    // 3. NUEVO: Al arrancar, nos vamos automáticamente al Menú
+    private void Start()
+    {
+        if (Instance == this)
+        {
+            SceneManager.LoadScene("Menu"); // Asegúrate de que tu escena 1 se llama exactamente "Menu"
+        }
+    }
+
+    // Crear sala como host
     public async void StartHost(string roomName)
     {
-        
         await Runner.StartGame(new StartGameArgs()
         {
-            GameMode = GameMode.Host, // T� creas y mandas en la partida
+            GameMode = GameMode.Host, // Tú creas y mandas en la partida
             SessionName = roomName,
-            SceneManager = GetComponent<NetworkSceneManagerDefault>()
+            SceneManager = GetComponent<NetworkSceneManagerDefault>(),
+            // NUEVO: Le decimos a Fusion que la sala es la escena 2 (Room)
+            Scene = SceneRef.FromIndex(2) 
         });
     }
 
-    // unirse a sala
+    // Unirse a sala como cliente
     public async void StartClient(string roomName)
     {
         await Runner.StartGame(new StartGameArgs()
