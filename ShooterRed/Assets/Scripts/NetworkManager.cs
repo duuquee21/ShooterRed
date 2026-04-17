@@ -26,6 +26,7 @@ public class NetworkManager : MonoBehaviour
             Runner = gameObject.AddComponent<NetworkRunner>();
             gameObject.AddComponent<NetworkSceneManagerDefault>();
             Runner.ProvideInput = true;
+            Runner.AddCallbacks(gameObject.AddComponent<PlayerInput>());
         }
     }
 
