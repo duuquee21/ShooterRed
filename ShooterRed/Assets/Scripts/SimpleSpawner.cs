@@ -4,8 +4,21 @@ using UnityEngine;
 // Heredamos de NetworkBehaviour para que Fusion reconozca este script
 public class SimpleSpawner : NetworkBehaviour
 {
+    public static SimpleSpawner Instance { get; private set; }
+
     [Header("Pon aqu� tu Prefab del Jugador")]
     public NetworkPrefabRef playerPrefab;
+
+    private void Awake()
+    {
+        Instance = this;
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this)
+            Instance = null;
+    }
 
     // Spawned() es un m�todo m�gico de Fusion.
     // Se ejecuta autom�ticamente en cuanto el jugador termina de cargar esta escena y se conecta a la sala.
@@ -13,7 +26,57 @@ public class SimpleSpawner : NetworkBehaviour
     {
         Debug.Log("�He entrado a la sala! Creando mi avatar...");
 
-        // Elegimos una posici�n aleatoria (para que si entran dos a la vez, no aparezcan uno dentro del otro)
+        if (Runner.GetPlayerObject(Runner.LocalPlayer) == null)
+        {
+            SpawnPlayer(Runner.LocalPlayer);
+        }
+    }
+
+    public NetworkObject SpawnPlayer(PlayerRef player)
+    {
+        Vector3 spawnPosition = GetSpawnPosition();
+
+        string playerName = NetworkManager.Instance != null ? NetworkManager.Instance.LocalPlayerName : "Jugador";
+
+        NetworkObject playerObject = Runner.Spawn(playerPrefab, spawnPosition, Quaternion.identity, player,
+            (runner, obj) =>
+            {
+                PlayerState ps = obj.GetComponent<PlayerState>();
+                if (ps != null)
+                {
+                    ps.Health = 100;
+                }
+
+                Debug.Log("Jugador spawneado con datos iniciales: " + playerName);
+            });
+
+        Runner.SetPlayerObject(player, playerObject);
+        return playerObject;
+    }
+
+    public void RespawnLocalPlayerAfterDelay(float delaySeconds)
+    {
+        if (!Object || !Runner.IsRunning)
+            return;
+
+        StartCoroutine(RespawnLocalCoroutine(delaySeconds));
+    }
+
+    private System.Collections.IEnumerator RespawnLocalCoroutine(float delaySeconds)
+    {
+        yield return new WaitForSeconds(delaySeconds);
+
+        if (!Object || Runner == null || !Runner.IsRunning)
+            yield break;
+
+        if (Runner.GetPlayerObject(Runner.LocalPlayer) != null)
+            yield break;
+
+        SpawnPlayer(Runner.LocalPlayer);
+    }
+
+    private Vector3 GetSpawnPosition()
+    {
         Vector3 randomPosition = new Vector3(Random.Range(-3f, 3f), 5f, Random.Range(-3f, 3f));
         if (Physics.Raycast(randomPosition, Vector3.down, out RaycastHit hit, 10f, LayerMask.GetMask("Ground")))
         {
@@ -24,28 +87,6 @@ public class SimpleSpawner : NetworkBehaviour
             randomPosition.y = 1f;
         }
 
-        // Runner.Spawn le dice a la red que cree el objeto. 
-        // Le pasamos el prefab, la posici�n, la rotaci�n (ninguna) y de qui�n es (nuestro).
-        Runner.Spawn(playerPrefab, randomPosition, Quaternion.identity, Runner.LocalPlayer);
-    }
-
-
-    private void Update()
-    {
-        // 1. Primero comprobamos que la red est� conectada y funcionando
-        if (Runner != null && Runner.IsRunning)
-        {
-            // 2. Si pulsas ESPACIO y a�n NO has spawneado...
-            if (Input.GetKeyDown(KeyCode.Space) )
-            {
-                
-
-                
-
-                
-                Vector3 randomPosition = new Vector3(Random.Range(-3f, 3f), 1f, Random.Range(-3f, 3f));
-                Runner.Spawn(playerPrefab, randomPosition, Quaternion.identity, Runner.LocalPlayer);
-            }
-        }
+        return randomPosition;
     }
 }
