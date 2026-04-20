@@ -18,6 +18,10 @@ public class PlayerState : NetworkBehaviour
     [Networked, OnChangedRender(nameof(OnStreakChanged))]
     public int Streak { get; set; }
 
+    // Nombre del jugador replicado a todos los clientes (máx 32 caracteres)
+    [Networked]
+    public NetworkString<_32> PlayerName { get; set; }
+
     public override void Spawned()
     {
         if (HasStateAuthority)
@@ -27,9 +31,13 @@ public class PlayerState : NetworkBehaviour
             Kills = 0;
             Deaths = 0;
             Streak = 0;
+
+            // Sincroniza el nombre que el jugador escribió en el menú
+            string name = NetworkManager.Instance != null ? NetworkManager.Instance.LocalPlayerName : "Jugador";
+            if (string.IsNullOrEmpty(name)) name = "Jugador";
+            PlayerName = name;
         }
 
-        // Forzar refresco visual al entrar
         OnHealthChanged();
         OnScoreChanged();
         OnStreakChanged();
@@ -37,7 +45,6 @@ public class PlayerState : NetworkBehaviour
 
     private void OnHealthChanged()
     {
-        // Solo presentación, nunca lógica de validación aquí
         Debug.Log("[Visual] Health actualizado: " + Health);
     }
 

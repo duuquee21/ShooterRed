@@ -69,7 +69,7 @@
         "Fusion.Addons.Physics",
         "Fusion.Addons.FSM"
     ],
-    "UseSerializableDictionary": true,
+    "UseSerializableDictionary": false,
     "NullChecksForNetworkedProperties": true,
     "CheckRpcAttributeUsage": false,
     "CheckNetworkedPropertiesBeingEmpty": false

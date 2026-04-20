@@ -396,8 +396,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _ScoreLimit: 0
   _State: 0
-  _Players:
-    _items: []
+  turretPrefab:
+    RawGuidValue: d73682899a37ca64d87a5094856087b0
 --- !u!114 &129247527
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -658,7 +658,6 @@ GameObject:
   - component: {fileID: 506634041}
   - component: {fileID: 506634040}
   - component: {fileID: 506634044}
-  - component: {fileID: 506634045}
   m_Layer: 5
   m_Name: Canvas
   m_TagString: Untagged
@@ -770,21 +769,6 @@ MonoBehaviour:
   NestedObjects: []
   NetworkedBehaviours: []
   ForceRemoteRenderTimeframe: 0
---- !u!114 &506634045
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 506634039}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c82088a63b4b5fa43b3eeeb578b972a5, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  healthText: {fileID: 1371349291}
-  scoreText: {fileID: 2101760497}
-  streakText: {fileID: 845011255}
 --- !u!1 &517617837
 GameObject:
   m_ObjectHideFlags: 0
@@ -1510,13 +1494,16 @@ GameObject:
   - component: {fileID: 1534904080}
   - component: {fileID: 1534904079}
   - component: {fileID: 1534904081}
+  - component: {fileID: 1534904083}
+  - component: {fileID: 1534904082}
+  - component: {fileID: 1534904084}
   m_Layer: 0
   m_Name: CanvasManager
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &1534904079
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1529,9 +1516,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c82088a63b4b5fa43b3eeeb578b972a5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  healthText: {fileID: 1371349291}
-  scoreText: {fileID: 2101760497}
-  streakText: {fileID: 845011255}
+  fontSize: 22
+  textColor: {r: 1, g: 1, b: 1, a: 1}
+  marginLeft: 20
+  marginBottom: 20
 --- !u!4 &1534904080
 Transform:
   m_ObjectHideFlags: 0
@@ -1563,6 +1551,55 @@ MonoBehaviour:
   size: 10
   thickness: 2
   gap: 4
+--- !u!114 &1534904082
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1534904078}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bae0fa260d1249a4f87cc97f27f1e6ce, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  fontSize: 16
+  textColor: {r: 1, g: 0, b: 0, a: 1}
+  entryLifetime: 4
+  maxEntries: 5
+--- !u!114 &1534904083
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1534904078}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5ee72c035a6d97489cd1bcee091a056, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  toggleKey: 9
+  fontSize: 18
+  headerColor: {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
+  rowColor: {r: 1, g: 1, b: 1, a: 1}
+  localPlayerColor: {r: 0, g: 1, b: 1, a: 1}
+--- !u!114 &1534904084
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1534904078}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 16dd2e16284b88f4a940494622d90db7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  fontSize: 36
+  enemyColor: {r: 1, g: 0, b: 0, a: 1}
+  localColor: {r: 0, g: 1, b: 0, a: 1}
+  heightOffset: 2.4
 --- !u!1 &1579305851
 GameObject:
   m_ObjectHideFlags: 0

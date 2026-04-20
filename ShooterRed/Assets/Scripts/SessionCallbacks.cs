@@ -32,11 +32,8 @@ public class SessionCallbacks : MonoBehaviour, INetworkRunnerCallbacks
     public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
     {
         Debug.Log("[Session] Jugador entró: " + player);
-
-        if (GameState.TryGetInstance(out GameState gameState))
-        {
-            gameState.RPC_RequestRegisterPlayer(player);
-        }
+        // El registro en GameState se hace desde PlayerCombatIntent.Spawned()
+        // No lo llamamos aquí porque GameState puede no estar listo todavía
     }
 
     public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
