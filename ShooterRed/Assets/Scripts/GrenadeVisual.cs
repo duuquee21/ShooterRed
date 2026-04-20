@@ -7,6 +7,7 @@ public class GrenadeVisual : MonoBehaviour
     [SerializeField] private float fuseTime = 2.5f;
     [SerializeField] private float bounceDamping = 0.4f;
     [SerializeField] private float gravity = -15f;
+    [SerializeField] private float explosionRadius = 8f; // debe coincidir con el radio en GameState
 
     // Callback que PlayerCombatIntent suscribe para recibir la posición de explosión
     public System.Action<Vector3> OnExplode;
@@ -24,6 +25,8 @@ public class GrenadeVisual : MonoBehaviour
     {
         if (Time.time - _spawnTime >= fuseTime)
         {
+            // Muestra el aro visual de explosión en el punto de aterrizaje
+            ExplosionVisual.Spawn(transform.position, explosionRadius);
             // Notifica la posición final antes de destruirse
             OnExplode?.Invoke(transform.position);
             Destroy(gameObject);

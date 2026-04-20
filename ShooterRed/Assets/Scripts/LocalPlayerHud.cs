@@ -12,6 +12,8 @@ public class LocalPlayerHud : MonoBehaviour
     private GUIStyle _style;
     private PlayerCombatData _data;
     private bool _hasData;
+    private int  _currentWeaponId;
+    private int  _currentWeaponRarity;
 
     private void Update()
     {
@@ -33,6 +35,18 @@ public class LocalPlayerHud : MonoBehaviour
 
         _data = data;
         _hasData = true;
+
+        // Leer arma equipada desde PlayerState
+        NetworkObject myObj = NetworkManager.Instance.Runner.GetPlayerObject(me);
+        if (myObj != null)
+        {
+            PlayerState ps = myObj.GetComponent<PlayerState>();
+            if (ps != null)
+            {
+                _currentWeaponId     = ps.CurrentWeaponId;
+                _currentWeaponRarity = ps.CurrentWeaponRarity;
+            }
+        }
     }
 
     private void OnGUI()
@@ -51,18 +65,26 @@ public class LocalPlayerHud : MonoBehaviour
 
         int lineHeight = fontSize + 6;
         int x = marginLeft;
-        int y = Screen.height - marginBottom - lineHeight * 3;
+        int y = Screen.height - marginBottom - lineHeight * 4;
 
         GUI.Label(new Rect(x, y, 300, lineHeight), "HP:    " + _data.Health, _style);
         GUI.Label(new Rect(x, y + lineHeight, 300, lineHeight), "Score: " + _data.Score, _style);
         GUI.Label(new Rect(x, y + lineHeight * 2, 300, lineHeight), "Racha: " + _data.Streak, _style);
 
-                // Muestra las recompensas disponibles encima del HUD principal
+        // Arma equipada con color según rareza
+        var def    = WeaponDatabase.Get(_currentWeaponId);
+        var rarity = (WeaponRarity)_currentWeaponRarity;
+        GUIStyle weaponStyle = new GUIStyle(_style);
+        weaponStyle.normal.textColor = rarity.RarityColor();
+        GUI.Label(new Rect(x, y + lineHeight * 3, 350, lineHeight),
+            $"Arma: {def.DisplayName}  [{rarity.Label()}]", weaponStyle);
+
+        // Recompensas de racha disponibles
         GUIStyle rewardStyle = new GUIStyle(GUI.skin.label);
-        rewardStyle.fontSize = fontSize - 2;
+        rewardStyle.fontSize  = fontSize - 2;
         rewardStyle.fontStyle = FontStyle.Bold;
 
-        int ry = y - lineHeight * 2; // posición encima del HUD
+        int ry = y - lineHeight * 2;
 
         if (_data.HasGrenade)
         {
@@ -72,7 +94,7 @@ public class LocalPlayerHud : MonoBehaviour
         }
         if (_data.HasAirstrike)
         {
-            rewardStyle.normal.textColor = new Color(1f, 0.5f, 0f); // naranja
+            rewardStyle.normal.textColor = new Color(1f, 0.5f, 0f);
             GUI.Label(new Rect(x, ry, 300, lineHeight), "[F] Ataque aereo disponible", rewardStyle);
             ry -= lineHeight;
         }

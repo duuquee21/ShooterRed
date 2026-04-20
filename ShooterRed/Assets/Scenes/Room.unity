@@ -398,6 +398,9 @@ MonoBehaviour:
   _State: 0
   turretPrefab:
     RawGuidValue: d73682899a37ca64d87a5094856087b0
+  grenadeStreakThreshold: 1
+  airstrikeStreakThreshold: 5
+  turretStreakThreshold: 10
 --- !u!114 &129247527
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -22,6 +22,13 @@ public class PlayerState : NetworkBehaviour
     [Networked]
     public NetworkString<_32> PlayerName { get; set; }
 
+    // Arma actualmente equipada y su rareza
+    [Networked, OnChangedRender(nameof(OnWeaponChanged))]
+    public int CurrentWeaponId { get; set; }
+
+    [Networked, OnChangedRender(nameof(OnWeaponChanged))]
+    public int CurrentWeaponRarity { get; set; }
+
     public override void Spawned()
     {
         if (HasStateAuthority)
@@ -31,6 +38,8 @@ public class PlayerState : NetworkBehaviour
             Kills = 0;
             Deaths = 0;
             Streak = 0;
+            CurrentWeaponId    = 0;
+            CurrentWeaponRarity = 0;
 
             // Sincroniza el nombre que el jugador escribió en el menú
             string name = NetworkManager.Instance != null ? NetworkManager.Instance.LocalPlayerName : "Jugador";
@@ -41,6 +50,7 @@ public class PlayerState : NetworkBehaviour
         OnHealthChanged();
         OnScoreChanged();
         OnStreakChanged();
+        OnWeaponChanged();
     }
 
     private void OnHealthChanged()
@@ -56,5 +66,12 @@ public class PlayerState : NetworkBehaviour
     private void OnStreakChanged()
     {
         Debug.Log("[Visual] Racha actualizada: " + Streak);
+    }
+
+    private void OnWeaponChanged()
+    {
+        var def = WeaponDatabase.Get(CurrentWeaponId);
+        var rarity = (WeaponRarity)CurrentWeaponRarity;
+        Debug.Log($"[Visual] Arma: {def.DisplayName} ({rarity.Label()})");
     }
 }

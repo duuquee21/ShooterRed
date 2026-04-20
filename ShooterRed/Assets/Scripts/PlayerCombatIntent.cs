@@ -184,37 +184,57 @@ public class PlayerCombatIntent : NetworkBehaviour
 
     private void TryShoot()
     {
-        // Control de cadencia: si no ha pasado suficiente tiempo desde el Ãºltimo disparo, ignorar
+        // Leer stats del arma equipada desde PlayerState
+        int weaponId    = 0;
+        int rarityLevel = 0;
+        NetworkObject myObj = Runner.GetPlayerObject(Object.InputAuthority);
+        if (myObj != null)
+        {
+            PlayerState ps = myObj.GetComponent<PlayerState>();
+            if (ps != null)
+            {
+                weaponId    = ps.CurrentWeaponId;
+                rarityLevel = ps.CurrentWeaponRarity;
+            }
+        }
+
+        float currentFireInterval = WeaponDatabase.GetFireRate(weaponId, rarityLevel);
+        int   currentDamage       = WeaponDatabase.GetDamage(weaponId, rarityLevel);
+
+        // Control de cadencia con la velocidad real del arma
         if (Time.time < _nextFireTime)
             return;
 
-        _nextFireTime = Time.time + fireInterval;
+        _nextFireTime = Time.time + currentFireInterval;
 
         Vector3 spawnPos;
         Quaternion spawnRot;
 
         if (playerCamera != null)
         {
-            // Convertimos el centro de la pantalla (o el cursor) en un rayo 3D
             Vector3 screenPoint = useScreenCenter
                 ? new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f)
                 : Input.mousePosition;
 
             Ray ray = playerCamera.ScreenPointToRay(screenPoint);
-            spawnPos = ray.origin;                              // el proyectil nace en la cÃ¡mara
-            spawnRot = Quaternion.LookRotation(ray.direction);  // apunta en la direcciÃ³n del rayo
+            spawnPos = ray.origin;
+            spawnRot = Quaternion.LookRotation(ray.direction);
         }
         else
         {
-            // Fallback si no hay cÃ¡mara: dispara hacia adelante desde la posiciÃ³n del jugador
             Transform origin = shootOrigin != null ? shootOrigin : transform;
             spawnPos = origin.position + Vector3.up * 1.4f;
             spawnRot = origin.rotation;
         }
 
-        // Fusion crea el proyectil en todos los clientes simultÃ¡neamente
-        // Object.InputAuthority le dice a Fusion quiÃ©n es el dueÃ±o del proyectil
-        Runner.Spawn(projectilePrefab, spawnPos, spawnRot, Object.InputAuthority);
+        // Pasar el daño real al proyectil mediante OnBeforeSpawned
+        int dmgCapture = currentDamage;
+        Runner.Spawn(projectilePrefab, spawnPos, spawnRot, Object.InputAuthority,
+            (runner, obj) =>
+            {
+                Projectile p = obj.GetComponent<Projectile>();
+                if (p != null) p.SetDamage(dmgCapture);
+            });
     }
 
     // Tiempo hasta el próximo intento de registro (evita spam)

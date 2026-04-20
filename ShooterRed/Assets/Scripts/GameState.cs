@@ -39,6 +39,10 @@ public class GameState : NetworkBehaviour
 
     [Header("Recompensas de racha")]
     [SerializeField] private NetworkPrefabRef turretPrefab; // prefab de la torreta registrado en Fusion
+    [Header("Umbrales de racha (kills necesarios)" )]
+    [SerializeField] private int grenadeStreakThreshold  = 3;
+    [SerializeField] private int airstrikeStreakThreshold = 5;
+    [SerializeField] private int turretStreakThreshold   = 10;
     [Header("Datos globales por jugador")]
     // Diccionario replicado: todos los clientes ven la misma tabla en tiempo real
     // Clave = ID del jugador, Valor = sus stats de combate
@@ -201,9 +205,9 @@ public class GameState : NetworkBehaviour
         attackerData.Score += 100; // 100 puntos por kill
 
         // Desbloquear recompensas de racha ANTES de guardar en el diccionario
-        if (attackerData.Streak >= 3) attackerData.HasGrenade = true;
-        if (attackerData.Streak >= 5) attackerData.HasAirstrike = true;
-        if (attackerData.Streak >= 10) attackerData.HasTurret = true;
+        if (attackerData.Streak >= grenadeStreakThreshold)  attackerData.HasGrenade   = true;
+        if (attackerData.Streak >= airstrikeStreakThreshold) attackerData.HasAirstrike = true;
+        if (attackerData.Streak >= turretStreakThreshold)   attackerData.HasTurret    = true;
 
         // Guardamos todos los cambios (kills, streak, score y recompensas) de una vez
         Players.Set(attacker, attackerData);

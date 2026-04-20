@@ -8,8 +8,14 @@ public class Projectile : NetworkBehaviour
     [Header("Proyectil")]
     [SerializeField] private float speed = 30f;      // velocidad en m/s
     [SerializeField] private float lifetime = 3f;    // segundos antes de destruirse si no impacta
-    [SerializeField] private int damage = 25;        // daÃ±o que solicita al impactar
+    [SerializeField] private int damage = 25;        // daño por defecto (se sobreescribe al spawnear)
     [SerializeField] private LayerMask hitMask = ~0; // capas que puede impactar (~0 = todas)
+
+    // Daño replicado: la authority lo fija en OnBeforeSpawned y todos los clientes lo leen
+    [Networked] private int NetworkedDamage { get; set; }
+
+    // Llamado por PlayerCombatIntent antes de que el objeto se sincronice
+    public void SetDamage(int dmg) { NetworkedDamage = dmg; }
 
     // TickTimer es un temporizador sincronizado con los ticks de Fusion
     // MÃ¡s fiable que Time.time en objetos de red porque es determinista
@@ -20,8 +26,10 @@ public class Projectile : NetworkBehaviour
     // Se ejecuta cuando el proyectil aparece en la sesiÃ³n
     public override void Spawned()
     {
-        // Solo la autoridad inicializa el timer
-        // Si lo hicieran todos los clientes podrÃ­a haber desfases
+        // Si nadie llamó SetDamage, usar el valor del Inspector como fallback
+        if (HasStateAuthority && NetworkedDamage == 0)
+            NetworkedDamage = damage;
+
         if (HasStateAuthority)
         {
             LifeTimer = TickTimer.CreateFromSeconds(Runner, lifetime);
@@ -60,9 +68,8 @@ public class Projectile : NetworkBehaviour
             {
                 if (GameState.TryGetInstance(out GameState gameState))
                 {
-                    // Solicita el daÃ±o a GameState â€” la autoridad no lo aplica directamente,
-                    // lo pide al Ã¡rbitro para mantener la validaciÃ³n centralizada
-                    gameState.RPC_RequestDamage(Object.InputAuthority, target.Object.InputAuthority, damage);
+                    int finalDamage = NetworkedDamage > 0 ? NetworkedDamage : damage;
+                    gameState.RPC_RequestDamage(Object.InputAuthority, target.Object.InputAuthority, finalDamage);
                 }
             }
 
