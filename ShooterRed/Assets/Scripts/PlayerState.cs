@@ -46,11 +46,22 @@ public class PlayerState : NetworkBehaviour
             if (string.IsNullOrEmpty(name)) name = "Jugador";
             PlayerName = name;
         }
+        else
+        {
+            // Para los clientes remotos, forzar refresco del nombre replicado
+            OnPlayerNameChanged();
+        }
 
         OnHealthChanged();
         OnScoreChanged();
         OnStreakChanged();
         OnWeaponChanged();
+    }
+
+    private void OnPlayerNameChanged()
+    {
+        // Aquí puedes agregar lógica si necesitas actualizar UI o debuggear
+        Debug.Log($"[PlayerState] Nombre replicado: {PlayerName}");
     }
 
     private void OnHealthChanged()

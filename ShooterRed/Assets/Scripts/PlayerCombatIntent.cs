@@ -89,22 +89,21 @@ public class PlayerCombatIntent : NetworkBehaviour
             gameState.RPC_RequestUseTurret(Object.InputAuthority, transform.position + transform.forward * 2f);
     }
 
-    // Instancia la granada visual localmente — el RPC de daño se llama cuando explota
-    private void SpawnGrenadeVisual(GameState gameState)
+    // Notifica a todos los clientes para que instancien la granada visualmente
+    [Rpc(RpcSources.All, RpcTargets.All)]
+    public void RPC_BroadcastGrenadeThrow(Vector3 spawnPos, Vector3 velocity)
     {
         if (grenadePrefabVisual == null) return;
 
-        Vector3 throwDir = playerCamera != null ? playerCamera.transform.forward : transform.forward;
-        Vector3 spawnPos = transform.position + Vector3.up * 1.5f + throwDir * 0.5f;
-
         GameObject go = Instantiate(grenadePrefabVisual, spawnPos, Random.rotation);
         GrenadeVisual gv = go.GetComponent<GrenadeVisual>();
-        if (gv != null)
-        {
-            Vector3 velocity = throwDir.normalized * grenadeThrowForce + Vector3.up * grenadeArcUp;
-            gv.Launch(velocity);
+        if (gv == null) return;
 
-            // Cuando la granada explota, enviamos el RPC con su posición final
+        gv.Launch(velocity);
+
+        // Solo quien lanzó la granada pide el daño cuando explota
+        if (HasInputAuthority)
+        {
             PlayerRef owner = Object.InputAuthority;
             gv.OnExplode = (explosionPos) =>
             {
@@ -112,6 +111,18 @@ public class PlayerCombatIntent : NetworkBehaviour
                     gs.RPC_RequestUseGrenade(owner, explosionPos);
             };
         }
+    }
+
+    private void SpawnGrenadeVisual(GameState gameState)
+    {
+        if (grenadePrefabVisual == null) return;
+
+        Vector3 throwDir = playerCamera != null ? playerCamera.transform.forward : transform.forward;
+        Vector3 spawnPos = transform.position + Vector3.up * 1.5f + throwDir * 0.5f;
+        Vector3 velocity = throwDir.normalized * grenadeThrowForce + Vector3.up * grenadeArcUp;
+
+        // El RPC instancia la visual en todos los clientes
+        RPC_BroadcastGrenadeThrow(spawnPos, velocity);
     }
 
     // Intenta resolver qué cámara usar para apuntar.
