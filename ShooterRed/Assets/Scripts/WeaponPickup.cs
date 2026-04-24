@@ -16,6 +16,8 @@ public class WeaponPickup : NetworkBehaviour
 
     private MeshRenderer _renderer;
     private bool _consumed;
+    private bool _canPickup = false;
+    private PlayerCombatIntent _localPlayerInTrigger = null;
 
     public override void Spawned()
     {
@@ -46,8 +48,40 @@ public class WeaponPickup : NetworkBehaviour
         PlayerCombatIntent pci = other.GetComponentInParent<PlayerCombatIntent>();
         if (pci == null || !pci.HasInputAuthority) return;
 
-        _consumed = true; // evita que el mismo cliente llame al RPC dos veces
-        RPC_RequestPickup(Runner.LocalPlayer);
+        _canPickup = true;
+        _localPlayerInTrigger = pci;
+        if (InteractionMessage.Instance != null)
+            InteractionMessage.Instance.Show("PULSA F PARA RECOGER");
+    }
+
+    // Cuando el jugador local sale del trigger
+    private void OnTriggerExit(Collider other)
+    {
+        PlayerCombatIntent pci = other.GetComponentInParent<PlayerCombatIntent>();
+        if (pci != null && pci.HasInputAuthority)
+        {
+            _canPickup = false;
+            _localPlayerInTrigger = null;
+            if (InteractionMessage.Instance != null)
+                InteractionMessage.Instance.Show(""); // Oculta el mensaje
+        }
+    }
+
+    private void Update()
+    {
+        // Solo el jugador local puede recoger
+        if (_canPickup && _localPlayerInTrigger != null && !_consumed)
+        {
+            if (Input.GetKeyDown(KeyCode.F))
+            {
+                _consumed = true;
+                RPC_RequestPickup(Runner.LocalPlayer);
+                _canPickup = false;
+                _localPlayerInTrigger = null;
+                if (InteractionMessage.Instance != null)
+                    InteractionMessage.Instance.Show("Has recogido el arma", 2f);
+            }
+        }
     }
 
     // La solicitud va a la StateAuthority del pickup (quien lo spawneó / master client)
