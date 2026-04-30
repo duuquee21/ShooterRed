@@ -1,10 +1,11 @@
-using System.Collections.Generic; // Necesario para usar Diccionarios (Custom Properties)
+using System.Collections.Generic;
 using UnityEngine;
 using Fusion;
 using UnityEngine.SceneManagement;
-using System.Threading.Tasks; // Necesario para las tareas asíncronas
+using Fusion.Sockets;
+using System;
 
-public class NetworkManager : MonoBehaviour
+public class NetworkManager : MonoBehaviour, INetworkRunnerCallbacks
 {
     public static NetworkManager Instance { get; private set; }
 
@@ -24,11 +25,9 @@ public class NetworkManager : MonoBehaviour
         if (Runner == null)
         {
             Runner = gameObject.AddComponent<NetworkRunner>();
-            SessionCallbacks callbacks = gameObject.AddComponent<SessionCallbacks>();
-            Runner.AddCallbacks(callbacks);
+            Runner.AddCallbacks(this); // ¡Perfecto, escuchándonos a nosotros mismos!
             gameObject.AddComponent<NetworkSceneManagerDefault>();
             Runner.ProvideInput = true;
-            
         }
     }
 
@@ -40,36 +39,96 @@ public class NetworkManager : MonoBehaviour
         }
     }
 
-    // --- NUEVO: Crear o Unirse a una sala específica con Custom Properties ---
+    // --- Crear o Unirse a una sala ESPECÍFICA (por nombre) ---
     public async void CreateOrJoinRoom(string roomName)
     {
-        // 1. Definimos las Custom Properties (Metadatos para el Lobby)
         Dictionary<string, SessionProperty> sessionProperties = new Dictionary<string, SessionProperty>
         {
             { "map", "arena01" },
             { "mode", "paintball" }
         };
 
-        // 2. Iniciamos la conexión en modo Shared
         await Runner.StartGame(new StartGameArgs()
         {
-            GameMode = GameMode.Shared, // Todos somos iguales (sin Host dictador)
+            GameMode = GameMode.Shared, 
             SessionName = roomName,
             SceneManager = GetComponent<NetworkSceneManagerDefault>(),
-            Scene = SceneRef.FromIndex(2), // Nos lleva a la escena Room
-            SessionProperties = sessionProperties // Le pegamos las etiquetas a la sala
+            Scene = SceneRef.FromIndex(2),
+            SessionProperties = sessionProperties 
         });
     }
 
-    // --- NUEVO: Unión Rápida (Quick Join) ---
+    // --- UNIÓN RÁPIDA (Optimizada) ---
     public async void QuickJoinRoom()
     {
-        // Al no pasarle un 'SessionName', Photon buscará cualquier sala abierta y te meterá
+        Debug.Log("QuickJoin: Buscando partida rápida...");
+        
+        // Al dejar SessionName vacío, Fusion automáticamente busca una sala libre o crea una.
         await Runner.StartGame(new StartGameArgs()
         {
             GameMode = GameMode.Shared,
+            SessionName = "", 
             SceneManager = GetComponent<NetworkSceneManagerDefault>(),
             Scene = SceneRef.FromIndex(2)
         });
     }
+
+    // --- MOSTRAR PANEL DE SALAS ---
+    public async void JoinRoom()
+    {
+        Debug.Log("Conectando al Lobby para buscar salas...");
+        
+        // 1. Mostramos el panel vacío para que el jugador vea que está cargando
+        if (RoomListPanel.Instance != null)
+        {
+            RoomListPanel.Instance.Show(new List<SessionInfo>()); 
+        }
+
+        // 2. Nos unimos al pasillo (Lobby Shared)
+        var result = await Runner.JoinSessionLobby(SessionLobby.Shared);
+
+        if (result.Ok)
+        {
+            Debug.Log("¡Conectados al Lobby! Esperando salas...");
+        }
+        else
+        {
+            Debug.LogWarning($"Fallo al conectar al Lobby: {result.ShutdownReason}");
+        }
+    }
+
+    // --- CALLBACK: RECIBIR LISTA DE SALAS ---
+    public void OnSessionListUpdated(NetworkRunner runner, List<SessionInfo> sessionList)
+    {
+        Debug.Log($"[Fusion] Actualizando Lobby... {sessionList.Count} salas encontradas.");
+        
+        // Si el panel está activo en la pantalla, actualizamos los botones directamente
+        if (RoomListPanel.Instance != null && RoomListPanel.Instance.panel.activeInHierarchy)
+        {
+            RoomListPanel.Instance.Show(sessionList);
+        }
+    }
+
+    // ========================================================================
+    // Métodos vacíos requeridos por INetworkRunnerCallbacks
+    // ========================================================================
+    public void OnConnectedToServer(NetworkRunner runner) { }
+    public void OnDisconnectedFromServer(NetworkRunner runner, NetDisconnectReason reason) { }
+    public void OnConnectRequest(NetworkRunner runner, NetworkRunnerCallbackArgs.ConnectRequest request, byte[] token) { }
+    public void OnConnectFailed(NetworkRunner runner, NetAddress remoteAddress, NetConnectFailedReason reason) { }
+    public void OnUserSimulationMessage(NetworkRunner runner, SimulationMessagePtr message) { }
+    public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason) { }
+    public void OnCustomAuthenticationResponse(NetworkRunner runner, Dictionary<string, object> data) { }
+    public void OnHostMigration(NetworkRunner runner, HostMigrationToken hostMigrationToken) { }
+    public void OnReliableDataReceived(NetworkRunner runner, PlayerRef player, ReliableKey key, ArraySegment<byte> data) { }
+    public void OnReliableDataProgress(NetworkRunner runner, PlayerRef player, ReliableKey key, float progress) { }
+    public void OnSceneLoadDone(NetworkRunner runner) { }
+    public void OnSceneLoadStart(NetworkRunner runner) { }
+    public void OnPlayerJoined(NetworkRunner runner, PlayerRef player) { }
+    public void OnPlayerLeft(NetworkRunner runner, PlayerRef player) { }
+    public void OnInput(NetworkRunner runner, NetworkInput input) { }
+    public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input) { }
+    public void OnShutdown(NetworkRunner runner, ShutdownReason reason, string message) { }
+    public void OnObjectEnterAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
+    public void OnObjectExitAOI(NetworkRunner runner, NetworkObject obj, PlayerRef player) { }
 }

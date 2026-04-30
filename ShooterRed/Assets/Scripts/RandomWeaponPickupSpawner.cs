@@ -1,7 +1,8 @@
 using Fusion;
 using UnityEngine;
 
-// Este spawner crea un pickup de arma aleatoria (rifle de asalto o francotirador) y rareza aleatoria
+// Este spawner crea un pickup de arma aleatoria y rareza aleatoria.
+// Mantiene su estado de respawn incluso si el Master Client cambia.
 public class RandomWeaponPickupSpawner : NetworkBehaviour
 {
     [Header("Prefabs de pickups de arma")]
@@ -11,8 +12,11 @@ public class RandomWeaponPickupSpawner : NetworkBehaviour
     [Header("Tiempo de respawn")]
     public float respawnTime = 10f;
 
-    private NetworkObject _currentPickup;
-    private float _nextRespawnTime = 0f;
+    // Usamos el ID de red del objeto para saber si está vivo, no una referencia local
+    [Networked] private NetworkId CurrentPickupId { get; set; }
+    
+    // Timer de red: sobrevive a desconexiones del Master Client
+    [Networked] private TickTimer RespawnTimer { get; set; }
 
     public override void Spawned()
     {
@@ -22,42 +26,59 @@ public class RandomWeaponPickupSpawner : NetworkBehaviour
         }
     }
 
-    private void Update()
+    // Cambiamos a FixedUpdateNetwork para la lógica de red
+    public override void FixedUpdateNetwork()
     {
         if (!HasStateAuthority) return;
 
-        // Si no hay pickup y el tiempo de respawn ha pasado, spawnea uno nuevo
-        if (_currentPickup == null && Time.time >= _nextRespawnTime)
-        {
-            SpawnRandomPickup();
-        }
+        // ¿Tenemos un pickup vivo?
+        bool hasPickup = Runner.TryFindObject(CurrentPickupId, out NetworkObject pickupObj);
 
-        // Si el pickup existía y ha sido recogido (despawns), inicia el temporizador
-        if (_currentPickup != null && _currentPickup.IsValid == false)
+        if (hasPickup)
         {
-            _currentPickup = null;
-            _nextRespawnTime = Time.time + respawnTime;
+            // Si el pickup existe en el mundo, nos aseguramos de que el timer esté apagado
+            RespawnTimer = TickTimer.None; 
+        }
+        else
+        {
+            // El pickup ya no existe. ¿Está el cronómetro apagado?
+            if (RespawnTimer.IsRunning == false && RespawnTimer.ExpiredOrNotRunning(Runner) == false)
+            {
+                // El arma acaba de ser recogida. Iniciamos la cuenta atrás de 10 segundos
+                RespawnTimer = TickTimer.CreateFromSeconds(Runner, respawnTime);
+            }
+            
+            // ¿Se ha acabado el tiempo del cronómetro?
+            if (RespawnTimer.Expired(Runner))
+            {
+                // ¡Tiempo! Spawneamos una nueva arma y apagamos el cronómetro
+                SpawnRandomPickup();
+                RespawnTimer = TickTimer.None;
+            }
         }
     }
 
     private void SpawnRandomPickup()
     {
-        // Elige aleatoriamente el prefab
+        // 1. Elegimos aleatoriamente el prefab
         int weaponType = Random.Range(0, 2); // 0 = rifle, 1 = sniper
         NetworkPrefabRef prefab = weaponType == 0 ? riflePickupPrefab : sniperPickupPrefab;
 
-        // Instancia el pickup
-        _currentPickup = Runner.Spawn(prefab, transform.position, Quaternion.identity);
+        // 2. Instanciamos el pickup (Fusion nos devuelve el objeto creado)
+        NetworkObject newPickup = Runner.Spawn(prefab, transform.position, Quaternion.identity);
 
-        // Asigna rareza aleatoria
-        int rarity = Random.Range(0, 5); // 0-4 (WeaponRarity)
-        var pickup = _currentPickup.GetComponent<WeaponPickup>();
-        if (pickup != null)
+        // 3. Guardamos el ID de red de este nuevo pickup para vigilarlo
+        CurrentPickupId = newPickup.Id;
+
+        // 4. Le asignamos su rareza
+        int rarity = Random.Range(0, 5); // 0-4
+        var pickupScript = newPickup.GetComponent<WeaponPickup>();
+        
+        if (pickupScript != null)
         {
-            pickup.RarityLevel = rarity;
+            // Como acabamos de instanciarlo, nosotros somos su StateAuthority temporalmente
+            pickupScript.RarityLevel = rarity;
+            pickupScript.WeaponId = weaponType == 0 ? 1 : 2; // Aseguramos que tenga el ID correcto
         }
-
-        // Ya no es necesario suscribirse a eventos, el control es por Update
     }
-
 }

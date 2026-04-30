@@ -1,5 +1,7 @@
+
 using UnityEngine;
 using TMPro;
+
 
 public class MenuController : MonoBehaviour
 {
@@ -40,6 +42,15 @@ public class MenuController : MonoBehaviour
             return false;
         }
         return true;
+    }
+
+    public void OnClickJoinRoomPanel()
+    {
+    if (ValidatePlayerName())
+    {
+        NetworkManager.Instance.LocalPlayerName = playerNameInput.text;
+        NetworkManager.Instance.JoinRoom();
+    }
     }
 
     private bool ValidateRoomName()
