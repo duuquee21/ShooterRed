@@ -3,117 +3,135 @@ using UnityEngine;
 
 public class WeaponPickup : NetworkBehaviour
 {
-    [Header("Configuración")]
-    [SerializeField] private int editorWeaponId = 1;
-    [SerializeField] private WeaponRarity editorRarity = WeaponRarity.Common;
+    [Header("Configuración en el Editor")]
+    public int editorWeaponId = 1; 
+    public WeaponRarity editorRarity = WeaponRarity.Normal;
 
-    // NUEVO: Referencia a tu script de mensaje flotante
-    [Header("UI Local")]
-    public PickupFloatingMessage floatingMessage;
+    [Header("Efectos de Rareza")]
+    public Light rarityLight; // La bombilla en el suelo
+    public Renderer rarityBeam; // El pilar de luz (cilindro)
 
-    // Estado replicado
+    [Header("Animación Visual")]
+    public Transform visualModel; // El modelo 3D de tu arma
+    public float spinSpeed = 90f; // Velocidad de giro
+    public float bobSpeed = 2f;   // Velocidad de subida/bajada
+    public float bobHeight = 0.15f; // Cuánto sube y baja
+    private float _startVisualY;
+
+    // Estado del Pickup en el mundo compartido
     [Networked] public int WeaponId { get; set; }
-    [Networked] public int RarityLevel { get; set; }
-    [Networked] public NetworkBool IsPickedUp { get; set; }
+    [Networked] public int RarityLevel { get; set; } 
+    [Networked] public NetworkBool IsConsumed { get; set; }
 
-    private MeshRenderer _renderer;
-    private bool _canPickup = false;
-    private PlayerCombatIntent _localPlayerInTrigger = null;
+    private bool _canPickupLocal = false;
+    private PlayerState _localPlayerState = null;
 
     public override void Spawned()
     {
+        // Solo el Servidor/Host elige la rareza aleatoria
         if (HasStateAuthority)
         {
             WeaponId = editorWeaponId;
-            RarityLevel = (int)editorRarity;
-            IsPickedUp = false;
+            
+            // Tiramos un dado del 1 al 100
+            int luck = Random.Range(1, 101);
+
+            if (luck <= 60)      // 60% de probabilidad
+                RarityLevel = (int)WeaponRarity.Normal;
+            else if (luck <= 90) // 30% de probabilidad
+                RarityLevel = (int)WeaponRarity.Especial;
+            else                 // 10% de probabilidad
+                RarityLevel = (int)WeaponRarity.Epico;
+            
+            IsConsumed = false;
         }
 
-        _renderer = GetComponentInChildren<MeshRenderer>();
-        ApplyRarityColor(); 
-        
-        // Nos aseguramos de que el texto empiece oculto
-        if (floatingMessage != null) 
-            floatingMessage.Show(false);
+        // Después de elegirla, guardamos su posición inicial para flotar
+        if (visualModel != null)
+            _startVisualY = visualModel.localPosition.y;
+
+        ApplyRarityVisuals();
     }
 
-    public override void Render()
+    private void ApplyRarityVisuals()
     {
-        transform.Rotate(Vector3.up, 90f * Time.deltaTime, Space.World);
-    }
+        Color rarityColor = Color.white; 
+        if (RarityLevel == (int)WeaponRarity.Especial) rarityColor = Color.cyan; 
+        if (RarityLevel == (int)WeaponRarity.Epico) rarityColor = new Color(0.6f, 0f, 1f); 
 
-    private void OnTriggerEnter(Collider other)
-    {
-        if (IsPickedUp) return; 
-
-        PlayerCombatIntent pci = other.GetComponentInParent<PlayerCombatIntent>();
-        if (pci == null || !pci.HasInputAuthority) return;
-
-        _canPickup = true;
-        _localPlayerInTrigger = pci;
-        
-        // NUEVO: Mostramos el cartel flotante solo a nosotros
-        if (floatingMessage != null)
-            floatingMessage.Show(true);
-    }
-
-    private void OnTriggerExit(Collider other)
-    {
-        PlayerCombatIntent pci = other.GetComponentInParent<PlayerCombatIntent>();
-        if (pci != null && pci.HasInputAuthority)
+        if (rarityLight != null)
         {
-            _canPickup = false;
-            _localPlayerInTrigger = null;
-            
-            // NUEVO: Ocultamos el cartel al alejarnos
-            if (floatingMessage != null)
-                floatingMessage.Show(false);
+            rarityLight.color = rarityColor;
+        }
+
+        if (rarityBeam != null)
+        {
+            rarityBeam.material.color = new Color(rarityColor.r, rarityColor.g, rarityColor.b, 0.4f);
+            rarityBeam.material.EnableKeyword("_EMISSION");
+            rarityBeam.material.SetColor("_EmissionColor", rarityColor * 1.5f);
         }
     }
 
     private void Update()
     {
-        if (_canPickup && _localPlayerInTrigger != null && !IsPickedUp)
+        // ==========================================
+        // ANIMACIÓN: Rotar y Flotar
+        // ==========================================
+        if (visualModel != null)
+        {
+            visualModel.Rotate(Vector3.up * spinSpeed * Time.deltaTime, Space.World);
+            float newY = _startVisualY + Mathf.Sin(Time.time * bobSpeed) * bobHeight;
+            visualModel.localPosition = new Vector3(visualModel.localPosition.x, newY, visualModel.localPosition.z);
+        }
+
+        // ==========================================
+        // LÓGICA DE RECOGIDA (Input Local)
+        // ==========================================
+        if (_canPickupLocal && _localPlayerState != null && !IsConsumed)
         {
             if (Input.GetKeyDown(KeyCode.F))
             {
-                _canPickup = false;
-                _localPlayerInTrigger = null;
+                _canPickupLocal = false;
                 
-                // NUEVO: Ocultamos el cartel inmediatamente al recoger el arma
-                if (floatingMessage != null)
-                    floatingMessage.Show(false);
-
-                RPC_RequestPickup(Runner.LocalPlayer);
+                // Feedback visual inmediato en la UI
+                if (InteractionMessage.Instance != null) 
+                    InteractionMessage.Instance.Show("¡Arma recogida!", 2f); 
+                
+                // LA CLAVE ARQUITECTÓNICA: Usamos el PlayerState del cliente 
+                // para enviar el RPC, mandando el ID de esta caja.
+                _localPlayerState.RPC_InteractWithPickup(Object.Id);
             }
         }
     }
 
-    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
-    private void RPC_RequestPickup(PlayerRef requester)
+    // ==========================================
+    // DETECCIÓN DEL JUGADOR
+    // ==========================================
+    private void OnTriggerEnter(Collider other)
     {
-        if (IsPickedUp) return; 
-        IsPickedUp = true;
-        RPC_GrantPickup(requester, WeaponId, RarityLevel);
-        Runner.Despawn(Object);
+        if (IsConsumed) return;
+        
+        PlayerState ps = other.GetComponentInParent<PlayerState>();
+        if (ps != null && ps.HasInputAuthority)
+        {
+            _canPickupLocal = true;
+            _localPlayerState = ps;
+            
+            if (InteractionMessage.Instance != null)
+                InteractionMessage.Instance.Show("PULSA 'F' PARA RECOGER", 9999f); 
+        }
     }
 
-    [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
-    private void RPC_GrantPickup([RpcTarget] PlayerRef player, int grantedWeaponId, int grantedRarity)
+    private void OnTriggerExit(Collider other)
     {
-        NetworkObject playerObj = Runner.GetPlayerObject(player);
-        if (playerObj == null) return;
-
-        PlayerState ps = playerObj.GetComponent<PlayerState>();
-        if (ps == null) return;
-
-        ps.CurrentWeaponId = grantedWeaponId;
-        ps.CurrentWeaponRarity = grantedRarity;
-    }
-
-    private void ApplyRarityColor()
-    {
-        if (_renderer == null) return;
-        _renderer.material.color = ((WeaponRarity)RarityLevel).RarityColor();
+        PlayerState ps = other.GetComponentInParent<PlayerState>();
+        if (ps != null && ps.HasInputAuthority)
+        {
+            _canPickupLocal = false;
+            _localPlayerState = null;
+            
+            if (InteractionMessage.Instance != null)
+                InteractionMessage.Instance.Show(""); 
+        }
     }
 }

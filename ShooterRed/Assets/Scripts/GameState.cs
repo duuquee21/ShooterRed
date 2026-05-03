@@ -1,83 +1,75 @@
 using Fusion;
 using UnityEngine;
+using UnityEngine.SceneManagement;
+using System.Collections;
 
 // Los tres estados posibles de la partida
 public enum MatchState : byte
 {
-    Waiting = 0,  // esperando que haya al menos 2 jugadores
-    Playing = 1,  // partida en curso, se puede disparar
-    Ended = 2     // alguien llegó al ScoreLimit, partida terminada
+    Waiting = 0,  
+    Playing = 1,  
+    Ended = 2     
 }
 
-// Estructura con todos los datos de combate de un jugador
-// INetworkStruct es necesario para que Fusion pueda replicarla por red
 public struct PlayerCombatData : INetworkStruct
 {
-    public int Health;   // vida actual (0 = muerto)
-    public int Kills;    // eliminaciones totales
-    public int Deaths;   // veces que ha muerto
-    public int Streak;   // racha actual de kills sin morir
-    public int Score;    // puntuación total acumulada
+    public int Health;   
+    public int Kills;    
+    public int Deaths;   
+    public int Streak;   
+    public int Score;    
     public bool HasGrenade;
     public bool HasAirstrike;
     public bool HasTurret;
 }
 
-// GameState es el árbitro de la partida.
-// Es el único que puede modificar stats, validar daño y resolver muertes.
-// Hereda de NetworkBehaviour para existir como objeto de red en Fusion.
 public class GameState : NetworkBehaviour
 {
-    // Singleton para acceder a GameState desde cualquier script sin buscarlo
     public static GameState Instance { get; private set; }
 
     [Header("Reglas globales")]
-    [Networked] public int ScoreLimit { get; set; }       // kills necesarias para ganar
-    [Networked] public MatchState State { get; set; }     // estado actual de la partida (replicado en red)
-    [Networked] public TickTimer MatchTimer { get; set; } // temporizador de red (no usado aún)
-
+    [Networked] public int ScoreLimit { get; set; }       
+    
+    [Networked, OnChangedRender(nameof(OnStateChanged))] 
+    public MatchState State { get; set; }     
+    
+    [Networked] public TickTimer MatchTimer { get; set; } 
 
     [Header("Recompensas de racha")]
-    [SerializeField] private NetworkPrefabRef turretPrefab; // prefab de la torreta registrado en Fusion
+    [SerializeField] private NetworkPrefabRef turretPrefab; 
+    
+    // NUEVO: Referencia al prefab puramente visual de la granada
+    [SerializeField] private GrenadeVisual grenadeVisualPrefab; 
+
     [Header("Umbrales de racha (kills necesarios)" )]
     [SerializeField] private int grenadeStreakThreshold  = 3;
     [SerializeField] private int airstrikeStreakThreshold = 5;
     [SerializeField] private int turretStreakThreshold   = 10;
+    
     [Header("Datos globales por jugador")]
-    // Diccionario replicado: todos los clientes ven la misma tabla en tiempo real
-    // Clave = ID del jugador, Valor = sus stats de combate
     [Networked, Capacity(16)]
     public NetworkDictionary<PlayerRef, PlayerCombatData> Players => default;
 
-    // Flag que indica que Spawned() ya se ejecutó y las propiedades [Networked] son accesibles
     private bool _isSpawned;
 
-    // IsNetworkReady: solo para LEER propiedades de red (evita el crash de acceso prematuro)
     public bool IsNetworkReady => _isSpawned && Object != null && Runner != null;
-
-    // CanRegister: para el RPC de registro no exigimos _isSpawned para evitar problemas de timing
     private bool CanRegister => Object != null && Runner != null && HasStateAuthority;
 
-    // Devuelve la instancia de GameState de forma segura desde cualquier script
     public static bool TryGetInstance(out GameState gameState)
     {
         if (Instance == null)
         {
             Instance = FindFirstObjectByType<GameState>();
         }
-
         gameState = Instance;
         return gameState != null;
     }
 
-    // Spawned() se ejecuta cuando este objeto de red aparece en la sesión
     public override void Spawned()
     {
         Instance = this;
-        _isSpawned = true; // a partir de aquí las propiedades [Networked] son accesibles
+        _isSpawned = true; 
 
-        // Solo el State Authority inicializa los valores globales
-        // Si lo hicieran todos los clientes, habría conflictos
         if (HasStateAuthority)
         {
             ScoreLimit = 15;
@@ -85,7 +77,6 @@ public class GameState : NetworkBehaviour
         }
     }
 
-    // Se limpia la referencia cuando el objeto desaparece de la sesión
     public override void Despawned(NetworkRunner runner, bool hasState)
     {
         _isSpawned = false;
@@ -93,23 +84,30 @@ public class GameState : NetworkBehaviour
             Instance = null;
     }
 
-    // Solo el State Authority puede validar reglas globales (daño, kills, etc.)
     public bool CanValidateGlobalRules()
     {
         return HasStateAuthority;
     }
 
-    // RPC de cliente → autoridad: registra a un jugador en el diccionario al entrar o al respawnear
-    // RpcSources.All = cualquier cliente puede llamarlo
-    // RpcTargets.StateAuthority = solo lo ejecuta quien tiene la autoridad
+    public override void FixedUpdateNetwork()
+    {
+        if (!HasStateAuthority) return;
+
+        if (State == MatchState.Playing)
+        {
+            if (MatchTimer.Expired(Runner))
+            {
+                Debug.Log("[Servidor] ¡Se acabó el tiempo!");
+                State = MatchState.Ended; 
+            }
+        }
+    }
+
     [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
     public void RPC_RequestRegisterPlayer(PlayerRef player)
     {
-        // Usamos CanRegister en lugar de IsNetworkReady para no depender de _isSpawned
-        if (!CanRegister)
-            return;
+        if (!CanRegister) return;
 
-        // Si ya existe (viene de un respawn), solo le restaura la vida y resetea la racha
         if (Players.ContainsKey(player))
         {
             PlayerCombatData existingData = Players[player];
@@ -119,7 +117,6 @@ public class GameState : NetworkBehaviour
             return;
         }
 
-        // Primera vez que entra: crea sus datos desde cero
         PlayerCombatData data = new PlayerCombatData
         {
             Health = 100,
@@ -131,48 +128,29 @@ public class GameState : NetworkBehaviour
 
         Players.Set(player, data);
 
-        // Si ya hay 2 o más jugadores, arranca la partida
         if (State == MatchState.Waiting && Players.Count >= 2)
         {
             State = MatchState.Playing;
+            MatchTimer = TickTimer.CreateFromSeconds(Runner, 300f); 
         }
     }
 
-    // RPC de cliente → autoridad: solicita aplicar daño a un jugador
-    // El cliente NUNCA aplica el daño por su cuenta, solo lo solicita aquí
     [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
     public void RPC_RequestDamage(PlayerRef attacker, PlayerRef target, int damage)
     {
-        if (!IsNetworkReady || !CanValidateGlobalRules())
-            return;
+        if (!IsNetworkReady || !CanValidateGlobalRules()) return;
+        if (State != MatchState.Playing) return;
+        if (damage <= 0 || damage > 100) return;
+        if (!Players.ContainsKey(attacker) || !Players.ContainsKey(target)) return;
+        if (attacker == target) return;
 
-        // No se puede disparar si la partida no está activa
-        if (State != MatchState.Playing)
-            return;
-
-        // Validación de seguridad: el daño debe estar en un rango razonable
-        if (damage <= 0 || damage > 100)
-            return;
-
-        // Ambos jugadores deben estar registrados en la partida
-        if (!Players.ContainsKey(attacker) || !Players.ContainsKey(target))
-            return;
-
-        // No te puedes disparar a ti mismo
-        if (attacker == target)
-            return;
-
-        // Leemos los datos actuales del objetivo del diccionario de red
         PlayerCombatData targetData = Players[target];
         targetData.Health -= damage;
 
-        // Si sigue vivo después del daño, solo actualizamos su vida
         if (targetData.Health > 0)
         {
             Players.Set(target, targetData);
 
-            // Sincronizamos también el componente PlayerState del avatar para que
-            // los callbacks visuales ([OnChangedRender]) se disparen correctamente
             NetworkObject aliveTargetObj = Runner.GetPlayerObject(target);
             if (aliveTargetObj != null)
             {
@@ -182,51 +160,38 @@ public class GameState : NetworkBehaviour
                     aliveTargetPs.Health = targetData.Health;
                 }
             }
-
             return;
         }
 
         // --- MUERTE: llegó a 0 vida o menos ---
-
-        // Actualizamos stats de la víctima
         targetData.Deaths += 1;
-        targetData.Streak = 0;    // se rompe la racha al morir
+        targetData.Streak = 0;    
         targetData.Health = 0;
-        // Al morir se pierden TODAS las recompensas pendientes
         targetData.HasGrenade = false;
         targetData.HasAirstrike = false;
         targetData.HasTurret = false;
         Players.Set(target, targetData);
 
-        // Actualizamos stats del atacante
         PlayerCombatData attackerData = Players[attacker];
         attackerData.Kills += 1;
-        attackerData.Streak += 1;  // suma a la racha del que mató
-        attackerData.Score += 100; // 100 puntos por kill
+        attackerData.Streak += 1;  
+        attackerData.Score += 100; 
 
-        // Desbloquear recompensas de racha ANTES de guardar en el diccionario
         if (attackerData.Streak >= grenadeStreakThreshold)  attackerData.HasGrenade   = true;
         if (attackerData.Streak >= airstrikeStreakThreshold) attackerData.HasAirstrike = true;
         if (attackerData.Streak >= turretStreakThreshold)   attackerData.HasTurret    = true;
 
-        // Guardamos todos los cambios (kills, streak, score y recompensas) de una vez
         Players.Set(attacker, attackerData);
 
-        // Notificamos a todos los clientes: aparece en el kill feed
         RPC_KillFeed(attacker, target, attackerData.Streak);
-
-        // Notificamos solo a la víctima para que inicie su proceso de respawn
         RPC_NotifyDeath(target, 5f);
 
-        // Si el atacante llegó al límite de kills, la partida termina
         if (attackerData.Kills >= ScoreLimit)
         {
-            State = MatchState.Ended;
+            State = MatchState.Ended; 
         }
     }
 
-    // RPC de autoridad → todos: notifica una kill para mostrarla en el kill feed
-    // Va en sentido contrario: la autoridad informa a todos los clientes
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     private void RPC_KillFeed(PlayerRef attacker, PlayerRef victim, int streak)
     {
@@ -238,7 +203,6 @@ public class GameState : NetworkBehaviour
         }
     }
 
-    // Devuelve el nombre del jugador desde su PlayerState, o "Jugador X" como fallback
     public string GetPlayerName(PlayerRef player)
     {
         if (Runner == null) return "Jugador " + player.PlayerId;
@@ -250,48 +214,38 @@ public class GameState : NetworkBehaviour
         return string.IsNullOrEmpty(name) ? "Jugador " + player.PlayerId : name;
     }
 
-    // Método de lectura segura del diccionario para otros scripts (HUD, Scoreboard...)
     public bool TryGetPlayerData(PlayerRef player, out PlayerCombatData data)
     {
         data = default;
-
-        if (!IsNetworkReady)
-            return false;
-
+        if (!IsNetworkReady) return false;
         return Players.TryGet(player, out data);
     }
 
-    // RPC de autoridad → todos: notifica la muerte de un jugador concreto
-    // Cada cliente lo recibe, pero solo actúa el que es la víctima
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     private void RPC_NotifyDeath(PlayerRef victim, float respawnDelay)
     {
-        // Solo actúa el cliente cuyo jugador local es la víctima
-        if (Runner == null || Runner.LocalPlayer != victim)
-            return;
+        if (Runner == null || Runner.LocalPlayer != victim) return;
 
-        // Destruye el avatar de la víctima en la escena
         NetworkObject victimObject = Runner.GetPlayerObject(victim);
         if (victimObject != null)
         {
             PlayerCombatIntent combatIntent = victimObject.GetComponent<PlayerCombatIntent>();
             if (combatIntent != null)
             {
-                combatIntent.DespawnOwnedAvatar();
+                combatIntent.DespawnOwnedAvatar(); 
             }
+
+            Runner.Despawn(victimObject);
+            Runner.SetPlayerObject(victim, null); 
         }
 
-        if (SimpleSpawner.Instance == null)
-        {
-            Debug.LogWarning("No existe SimpleSpawner para respawnear al jugador " + victim);
-            return;
-        }
-
-        // Inicia la corrutina de espera antes de volver a aparecer
+        if (SimpleSpawner.Instance == null) return;
         SimpleSpawner.Instance.RespawnLocalPlayerAfterDelay(respawnDelay);
     }
 
-    // RPC para usar la granada (racha 3) — daño en la posición exacta donde explota
+    // ========================================================================
+    // GRANADA NORMAL
+    // ========================================================================
     [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
     public void RPC_RequestUseGrenade(PlayerRef requester, Vector3 explosionPos)
     {
@@ -318,10 +272,11 @@ public class GameState : NetworkBehaviour
                 RPC_RequestDamage(requester, kvp.Key, dmg);
             }
         }
-        Debug.Log("Granada usada por: " + requester);
     }
 
-    // RPC para usar el ataque aéreo (racha 5) — daño de área instantáneo radio amplio
+    // ========================================================================
+    // ATAQUE AÉREO: LLUVIA DE GRANADAS (NUEVO)
+    // ========================================================================
     [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
     public void RPC_RequestUseAirstrike(PlayerRef requester)
     {
@@ -334,29 +289,84 @@ public class GameState : NetworkBehaviour
         data.HasAirstrike = false;
         Players.Set(requester, data);
 
-        NetworkObject requesterObj = Runner.GetPlayerObject(requester);
-        if (requesterObj == null) return;
-        Vector3 center = requesterObj.transform.position;
+        // Generamos UNA semilla aleatoria para coordinar todos los clientes
+        int magicSeed = Random.Range(int.MinValue, int.MaxValue);
 
-        float radius = 15f;
-        foreach (var kvp in Players)
-        {
-            if (kvp.Key == requester) continue;
-            if (kvp.Value.Health <= 0) continue;
-            NetworkObject enemyObj = Runner.GetPlayerObject(kvp.Key);
-            if (enemyObj == null) continue;
-            float dist = Vector3.Distance(center, enemyObj.transform.position);
-            if (dist <= radius)
-            {
-                int dmg = Mathf.RoundToInt(Mathf.Lerp(25f, 75f, 1f - (dist / radius)));
-                RPC_RequestDamage(requester, kvp.Key, dmg);
-            }
-        }
-        Debug.Log("Ataque aereo usado por: " + requester);
+        // Avisamos a los clientes para que dibujen las granadas
+        RPC_PlayAirstrikeVisuals(magicSeed);
+
+        // El servidor empieza a contar para aplicar el daño
+        StartCoroutine(AirstrikeDamageRoutine(requester, magicSeed));
+
+        Debug.Log("Ataque aéreo solicitado por: " + requester);
     }
 
-    // RPC para desplegar la torreta (racha 10)
-    // No aplica daño directamente — spawnea un NetworkObject que actúa por su cuenta
+    [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+    private void RPC_PlayAirstrikeVisuals(int seed)
+    {
+        if (grenadeVisualPrefab == null) return;
+
+        Random.State oldState = Random.state;
+        Random.InitState(seed);
+
+        int numberOfBombs = 10;
+        float mapSize = 25f; 
+
+        for (int i = 0; i < numberOfBombs; i++)
+        {
+            Vector3 randomPoint = new Vector3(Random.Range(-mapSize, mapSize), 0, Random.Range(-mapSize, mapSize));
+            Vector3 spawnPos = new Vector3(randomPoint.x, 20f, randomPoint.z); // Caen desde el cielo
+            
+            GrenadeVisual bomb = Instantiate(grenadeVisualPrefab, spawnPos, Quaternion.identity);
+            bomb.Launch(new Vector3(0, -5f, 0)); // Caída recta
+        }
+
+        Random.state = oldState;
+    }
+
+    private IEnumerator AirstrikeDamageRoutine(PlayerRef requester, int seed)
+    {
+        // Esperamos lo que tarda la mecha de la granada (2.5s)
+        yield return new WaitForSeconds(2.5f);
+
+        Random.State oldState = Random.state;
+        Random.InitState(seed);
+
+        int numberOfBombs = 10;
+        float mapSize = 25f;
+        float radius = 8f;
+
+        Vector3[] explosionPoints = new Vector3[numberOfBombs];
+        for (int i = 0; i < numberOfBombs; i++)
+        {
+            explosionPoints[i] = new Vector3(Random.Range(-mapSize, mapSize), 0, Random.Range(-mapSize, mapSize));
+        }
+        Random.state = oldState;
+
+        foreach (Vector3 pos in explosionPoints)
+        {
+            foreach (var kvp in Players)
+            {
+                if (kvp.Value.Health <= 0) continue;
+                // Si quieres que el ataque aéreo mate al que lo lanzó, comenta la siguiente línea:
+                // if (kvp.Key == requester) continue; 
+
+                NetworkObject enemyObj = Runner.GetPlayerObject(kvp.Key);
+                if (enemyObj == null) continue;
+
+                float dist = Vector3.Distance(pos, enemyObj.transform.position);
+                if (dist <= radius)
+                {
+                    int dmg = Mathf.RoundToInt(Mathf.Lerp(20f, 60f, 1f - (dist / radius)));
+                    RPC_RequestDamage(requester, kvp.Key, dmg);
+                }
+            }
+        }
+    }
+
+    // ========================================================================
+    // TORRETA
+    // ========================================================================
     [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
     public void RPC_RequestUseTurret(PlayerRef requester, Vector3 position)
     {
@@ -366,17 +376,52 @@ public class GameState : NetworkBehaviour
         if (!Players.TryGet(requester, out PlayerCombatData data)) return;
         if (!data.HasTurret) return;
 
-        // Consume la recompensa
         data.HasTurret = false;
         Players.Set(requester, data);
 
-        // Spawnea la torreta en la posición del jugador
-        // El prefab debe estar registrado en Fusion Network Project Config
         if (turretPrefab.IsValid)
         {
-            Runner.Spawn(turretPrefab, position, Quaternion.identity, requester);
+            // EL CAMBIO ESTÁ AQUÍ: Usamos un callback para decirle quién es su dueño
+            Runner.Spawn(turretPrefab, position, Quaternion.identity, requester, 
+                (runner, obj) => 
+                {
+                    TurretController turret = obj.GetComponent<TurretController>();
+                    if (turret != null)
+                    {
+                        turret.Owner = requester; // ¡Ya sabe que no debe dispararte a ti!
+                    }
+                });
+        }
+    }
+
+    // ========================================================================
+    // EVENTOS DE CAMBIO DE ESTADO (UI y Lobby)
+    // ========================================================================
+    public void OnStateChanged()
+    {
+        if (State == MatchState.Playing)
+        {
+            Debug.Log("¡LA PARTIDA HA COMENZADO!");
+        }
+        else if (State == MatchState.Ended)
+        {
+            Debug.Log("¡FIN DE LA PARTIDA!");
+            StartCoroutine(ReturnToLobbyRoutine());
+        }
+    }
+
+    private IEnumerator ReturnToLobbyRoutine()
+    {
+        // 10 segundos para ver el Scoreboard
+        yield return new WaitForSeconds(10f);
+
+        Debug.Log("Desconectando y volviendo al Lobby...");
+
+        if (Runner != null)
+        {
+            Runner.Shutdown();
         }
 
-        Debug.Log("Torreta desplegada por: " + requester);
+        SceneManager.LoadScene("LobbyScene"); 
     }
 }

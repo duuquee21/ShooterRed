@@ -9,8 +9,6 @@ public class PlayerState : NetworkBehaviour
     [Networked, OnChangedRender(nameof(OnScoreChanged))]
     public int Score { get; set; }
 
-    // ¡Extra! Le ponemos OnChangedRender a Kills y Deaths también 
-    // por si luego quieres actualizar un marcador (Scoreboard)
     [Networked, OnChangedRender(nameof(OnStatsChanged))]
     public int Kills { get; set; }
 
@@ -20,19 +18,20 @@ public class PlayerState : NetworkBehaviour
     [Networked, OnChangedRender(nameof(OnStreakChanged))]
     public int Streak { get; set; }
 
-    // CORRECCIÓN 1: Añadido el OnChangedRender para que escuche los cambios de red
     [Networked, OnChangedRender(nameof(OnPlayerNameChanged))]
     public NetworkString<_32> PlayerName { get; set; }
 
-    // Arma actualmente equipada y su rareza
-    [Networked, OnChangedRender(nameof(OnWeaponChanged))]
+    // ========================================================================
+    // ESTADO DEL ARMA
+    // ========================================================================
+    [Networked, OnChangedRender(nameof(OnCurrentWeaponChanged))]
     public int CurrentWeaponId { get; set; }
 
-    [Networked, OnChangedRender(nameof(OnWeaponChanged))]
+    [Networked, OnChangedRender(nameof(OnCurrentWeaponChanged))]
     public int CurrentWeaponRarity { get; set; }
 
     [Header("Referencias Visuales")]
-    public PlayerWeaponVisuals weaponVisuals; // <-- AÑADE ESTO
+    public PlayerWeaponVisuals weaponVisuals; 
 
     public override void Spawned()
     {
@@ -44,76 +43,76 @@ public class PlayerState : NetworkBehaviour
             Deaths = 0;
             Streak = 0;
             
-            // ¡ESTE ES EL ÚNICO CAMBIO! 
-            // 1 = Tu arma básica (Asegúrate de que el 1 sea el ID correcto)
-            CurrentWeaponId = 1; 
-            
-            CurrentWeaponRarity = 0; // Rareza común (Common)
+            // Arma base al nacer
+            CurrentWeaponId = 0; 
+            CurrentWeaponRarity = (int)WeaponRarity.Normal;
 
             string name = NetworkManager.Instance != null ? NetworkManager.Instance.LocalPlayerName : "Jugador";
-            if (string.IsNullOrEmpty(name)) name = "Jugador";
             PlayerName = name;
         }
 
-        // Forzamos la actualización visual para TODOS los clientes
-        // Esto asegura que si entras a una partida ya empezada, veas todo tal y como está
+        // Forzamos actualización inicial visual
         OnPlayerNameChanged();
         OnHealthChanged();
-        OnScoreChanged();
-        OnStatsChanged();
-        OnStreakChanged();
-        OnWeaponChanged();
+        OnCurrentWeaponChanged();
     }
 
     // ========================================================================
-    // CALLBACKS VISUALES (Se ejecutan solos cuando cambian las variables de red)
+    // NUEVO: INTERACCIÓN SEGURA CON OBJETOS DEL MAPA (RPC)
+    // El cliente pide al servidor interactuar con una caja usando su propio personaje
     // ========================================================================
-    
-    private void OnPlayerNameChanged()
+    [Rpc(RpcSources.InputAuthority | RpcSources.StateAuthority, RpcTargets.StateAuthority)]
+    public void RPC_InteractWithPickup(NetworkId pickupId)
     {
-        // Aquí podrías actualizar el TextMeshPro flotante encima de la cabeza del jugador
-        Debug.Log($"[PlayerState] Nombre replicado actualizado: {PlayerName}");
-    }
-
-    private void OnHealthChanged()
-    {
-        // Aquí podrías actualizar la barra de vida en el Canvas
-        Debug.Log($"[Visual] Health actualizado: {Health}");
-    }
-
-    private void OnScoreChanged()
-    {
-        Debug.Log($"[Visual] Score actualizado: {Score}");
-    }
-
-    private void OnStatsChanged()
-    {
-        // Útil si pulsas la tecla TAB para ver las bajas y muertes
-        Debug.Log($"[Visual] Stats - Kills: {Kills} | Deaths: {Deaths}");
-    }
-
-    private void OnStreakChanged()
-    {
-        Debug.Log($"[Visual] Racha actualizada: {Streak}");
-    }
-
-    private void OnWeaponChanged()
-    {
-        if (CurrentWeaponId <= 0)
+        // 1. El servidor busca la caja en el mapa usando el DNI
+        if (Runner.TryFindObject(pickupId, out NetworkObject pickupObj))
         {
-            Debug.Log("[Visual] Jugador desarmado.");
-            // Le decimos al script visual que equipe el ID 0 (nada)
-            if (weaponVisuals != null) weaponVisuals.EquipWeaponVisual(0); 
-            return;
+            WeaponPickup pickup = pickupObj.GetComponent<WeaponPickup>();
+            
+            // 2. Si la caja existe y nadie la ha cogido aún...
+            if (pickup != null && !pickup.IsConsumed)
+            {
+                pickup.IsConsumed = true; // Bloqueamos para que nadie más la coja al mismo tiempo
+                
+                // 3. ¡Nos ponemos el arma! (Modificamos el [Networked] de este PlayerState)
+                CurrentWeaponId = pickup.WeaponId;
+                CurrentWeaponRarity = pickup.RarityLevel;
+                
+                Debug.Log($"[Servidor] El jugador {Object.InputAuthority} recogió el arma {CurrentWeaponId}");
+                
+                // 4. Destruimos la caja del mapa
+                Runner.Despawn(pickupObj);
+            }
         }
+        else
+        {
+            Debug.LogWarning($"[Servidor] No se encontró el objeto interactuable con ID {pickupId}. Quizás alguien lo recogió antes.");
+        }
+    }
 
-        var def = WeaponDatabase.Get(CurrentWeaponId);
-        var rarity = (WeaponRarity)CurrentWeaponRarity;
-        
-        Debug.Log($"[Visual] Arma equipada: {def.DisplayName} ({rarity})");
-        
-        // ¡AQUÍ ESTÁ LA MAGIA! Le pasamos el ID al script visual
-        if (weaponVisuals != null) 
-            weaponVisuals.EquipWeaponVisual(CurrentWeaponId);
+    // ========================================================================
+    // CALLBACKS VISUALES
+    // ========================================================================
+    private void OnPlayerNameChanged() => Debug.Log($"Nombre: {PlayerName}");
+    private void OnHealthChanged() => Debug.Log($"Vida: {Health}");
+    private void OnScoreChanged() => Debug.Log($"Score: {Score}");
+    private void OnStatsChanged() => Debug.Log($"Kills: {Kills}");
+    private void OnStreakChanged() => Debug.Log($"Racha: {Streak}");
+
+    // ========================================================================
+    // REACCIÓN VISUAL DEL ARMA
+    // ========================================================================
+    public void OnCurrentWeaponChanged()
+    {
+        Debug.Log($"[DOMINÓ 2] El PlayerState de [Player:{Object.InputAuthority}] ha detectado que su ID de arma ahora es: {CurrentWeaponId}");
+
+        if (weaponVisuals != null)
+        {
+            weaponVisuals.RefreshVisuals();
+        }
+        else
+        {
+            Debug.LogError("[ERROR CRÍTICO] ¡weaponVisuals ESTÁ VACÍO! Falta arrastrar el script PlayerWeaponVisuals al Inspector del PlayerState.");
+        }
     }
 }

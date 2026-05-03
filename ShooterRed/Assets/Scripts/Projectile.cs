@@ -39,6 +39,8 @@ public class Projectile : NetworkBehaviour
     // FixedUpdateNetwork se ejecuta en cada tick de red
     public override void FixedUpdateNetwork()
     {
+
+        if (Object == null || Runner == null || !Runner.IsRunning) return;
         // Solo la autoridad mueve el proyectil y procesa colisiones
         // Los otros clientes lo ven moverse gracias a la replicaciÃ³n del transform
         if (!HasStateAuthority || _hasHit)
