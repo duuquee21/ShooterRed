@@ -1563,6 +1563,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   playerNameInput: {fileID: 1539409526}
   roomNameInput: {fileID: 1874010519}
+  menuPanel: {fileID: 1878124743}
 --- !u!114 &972575595
 MonoBehaviour:
   m_ObjectHideFlags: 0

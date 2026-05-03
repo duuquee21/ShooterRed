@@ -21,6 +21,7 @@ public struct PlayerCombatData : INetworkStruct
     public bool HasGrenade;
     public bool HasAirstrike;
     public bool HasTurret;
+    public NetworkString<_32> PlayerName;
 }
 
 public class GameState : NetworkBehaviour
@@ -108,11 +109,22 @@ public class GameState : NetworkBehaviour
     {
         if (!CanRegister) return;
 
+        // Obtener el nombre del PlayerState para guardarlo en los datos replicados
+        string pName = "Jugador " + player.PlayerId;
+        NetworkObject pObj = Runner.GetPlayerObject(player);
+        if (pObj != null)
+        {
+            PlayerState ps = pObj.GetComponent<PlayerState>();
+            if (ps != null && !string.IsNullOrEmpty(ps.PlayerName.ToString()))
+                pName = ps.PlayerName.ToString();
+        }
+
         if (Players.ContainsKey(player))
         {
             PlayerCombatData existingData = Players[player];
             existingData.Health = 100;
             existingData.Streak = 0;
+            existingData.PlayerName = pName;
             Players.Set(player, existingData);
             return;
         }
@@ -123,7 +135,8 @@ public class GameState : NetworkBehaviour
             Kills = 0,
             Deaths = 0,
             Streak = 0,
-            Score = 0
+            Score = 0,
+            PlayerName = pName
         };
 
         Players.Set(player, data);
@@ -136,6 +149,16 @@ public class GameState : NetworkBehaviour
     }
 
     [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    public void RPC_UpdatePlayerName(PlayerRef player, string newName)
+    {
+        if (!CanRegister) return;
+        if (!Players.ContainsKey(player)) return;
+        PlayerCombatData d = Players[player];
+        d.PlayerName = newName;
+        Players.Set(player, d);
+    }
+
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
     public void RPC_RequestDamage(PlayerRef attacker, PlayerRef target, int damage)
     {
         if (!IsNetworkReady || !CanValidateGlobalRules()) return;
@@ -145,6 +168,13 @@ public class GameState : NetworkBehaviour
         if (attacker == target) return;
 
         PlayerCombatData targetData = Players[target];
+
+        // ==========================================
+        // ¡EL SEGURO ANTI-ZOMBIES! 
+        // Si el jugador ya está muerto, ignoramos este daño.
+        // ==========================================
+        if (targetData.Health <= 0) return;
+
         targetData.Health -= damage;
 
         if (targetData.Health > 0)
@@ -183,7 +213,10 @@ public class GameState : NetworkBehaviour
 
         Players.Set(attacker, attackerData);
 
-        RPC_KillFeed(attacker, target, attackerData.Streak);
+        // Los nombres se obtienen AQUÍ (en la autoridad) antes de que los objetos puedan despawnearse
+        string attackerNameStr = GetPlayerName(attacker);
+        string victimNameStr   = GetPlayerName(target);
+        RPC_KillFeed(attackerNameStr, victimNameStr);
         RPC_NotifyDeath(target, 5f);
 
         if (attackerData.Kills >= ScoreLimit)
@@ -193,25 +226,38 @@ public class GameState : NetworkBehaviour
     }
 
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
-    private void RPC_KillFeed(PlayerRef attacker, PlayerRef victim, int streak)
+    private void RPC_KillFeed(string attackerName, string victimName)
     {
         if (KillFeedHud.Instance != null)
         {
-            string attackerName = GetPlayerName(attacker);
-            string victimName = GetPlayerName(victim);
             KillFeedHud.Instance.AddEntry(attackerName, victimName);
         }
     }
 
     public string GetPlayerName(PlayerRef player)
     {
-        if (Runner == null) return "Jugador " + player.PlayerId;
-        NetworkObject obj = Runner.GetPlayerObject(player);
-        if (obj == null) return "Jugador " + player.PlayerId;
-        PlayerState ps = obj.GetComponent<PlayerState>();
-        if (ps == null) return "Jugador " + player.PlayerId;
-        string name = ps.PlayerName.ToString();
-        return string.IsNullOrEmpty(name) ? "Jugador " + player.PlayerId : name;
+        // Primero intentamos leerlo del diccionario replicado (siempre disponible en todos los clientes)
+        if (IsNetworkReady && Players.TryGet(player, out PlayerCombatData data))
+        {
+            string nameFromDict = data.PlayerName.ToString();
+            if (!string.IsNullOrEmpty(nameFromDict))
+                return nameFromDict;
+        }
+        // Fallback: leerlo del PlayerState si está vivo
+        if (Runner != null)
+        {
+            NetworkObject obj = Runner.GetPlayerObject(player);
+            if (obj != null)
+            {
+                PlayerState ps = obj.GetComponent<PlayerState>();
+                if (ps != null)
+                {
+                    string name = ps.PlayerName.ToString();
+                    if (!string.IsNullOrEmpty(name)) return name;
+                }
+            }
+        }
+        return "Jugador " + player.PlayerId;
     }
 
     public bool TryGetPlayerData(PlayerRef player, out PlayerCombatData data)
@@ -381,7 +427,7 @@ public class GameState : NetworkBehaviour
 
         if (turretPrefab.IsValid)
         {
-            // EL CAMBIO ESTÁ AQUÍ: Usamos un callback para decirle quién es su dueño
+            // Usamos un callback para decirle quién es su dueño
             Runner.Spawn(turretPrefab, position, Quaternion.identity, requester, 
                 (runner, obj) => 
                 {

@@ -9,12 +9,16 @@ public class MenuController : MonoBehaviour
     public TMP_InputField playerNameInput;
     public TMP_InputField roomNameInput;
 
+    [Header("Paneles")]
+    public GameObject menuPanel; // El panel principal del menú — asígnalo en el Inspector
+
     // Botón: Crear o Unirse a una sala escribiendo el nombre
     public void OnClickCreateOrJoinRoom()
     {
         if (ValidatePlayerName() && ValidateRoomName())
         {
             NetworkManager.Instance.LocalPlayerName = playerNameInput.text;
+            Debug.Log($"[MenuController] Nombre asignado: '{playerNameInput.text}'");
             NetworkManager.Instance.CreateOrJoinRoom(roomNameInput.text);
         }
     }
@@ -46,11 +50,13 @@ public class MenuController : MonoBehaviour
 
     public void OnClickJoinRoomPanel()
     {
-    if (ValidatePlayerName())
-    {
-        NetworkManager.Instance.LocalPlayerName = playerNameInput.text;
-        NetworkManager.Instance.JoinRoom();
-    }
+        if (ValidatePlayerName())
+        {
+            NetworkManager.Instance.LocalPlayerName = playerNameInput.text;
+            // Ocultamos el menú principal para que no tape el panel de salas
+            if (menuPanel != null) menuPanel.SetActive(false);
+            NetworkManager.Instance.JoinRoom();
+        }
     }
 
     private bool ValidateRoomName()

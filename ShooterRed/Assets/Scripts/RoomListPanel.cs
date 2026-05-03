@@ -2,11 +2,11 @@ using System.Collections.Generic;
 using Fusion;
 using UnityEngine;
 using UnityEngine.UI;
-using TMPro; // <-- AÑADIDO PARA USAR TEXTMESHPRO
+using TMPro;
 
 public class RoomListPanel : MonoBehaviour
 {
-    public static RoomListPanel Instance { get; private set; }
+    public static RoomListPanel Instance { get; set; }
 
     [Header("UI References")]
     public GameObject roomButtonPrefab;
@@ -28,20 +28,19 @@ public class RoomListPanel : MonoBehaviour
     {
         ClearList();
         panel.SetActive(true);
+
         foreach (var room in rooms)
         {
             GameObject btnObj = Instantiate(roomButtonPrefab, contentParent);
             var btn = btnObj.GetComponent<Button>();
-            var txt = btnObj.GetComponentInChildren<TextMeshProUGUI>(); 
-            
-            if (txt != null)
-            {
-                // ¡AQUÍ ESTÁ LA MAGIA!
-                // Juntamos el nombre de la sala con los jugadores actuales y los máximos
-                txt.text = $"{room.Name} ({room.PlayerCount}/{room.MaxPlayers})";
-            }
+            var txt = btnObj.GetComponentInChildren<TextMeshProUGUI>();
 
-            btn.onClick.AddListener(() => OnRoomSelected(room.Name));
+            if (txt != null)
+                txt.text = $"{room.Name} ({room.PlayerCount}/{room.MaxPlayers})";
+
+            string roomName = room.Name;
+            if (btn != null)
+                btn.onClick.AddListener(() => OnRoomSelected(roomName));
         }
     }
 
@@ -49,14 +48,16 @@ public class RoomListPanel : MonoBehaviour
     {
         panel.SetActive(false);
         ClearList();
+        // Restauramos el menú principal si existe
+        MenuController mc = FindFirstObjectByType<MenuController>();
+        if (mc != null && mc.menuPanel != null)
+            mc.menuPanel.SetActive(true);
     }
 
     private void ClearList()
     {
         foreach (Transform child in contentParent)
-        {
             Destroy(child.gameObject);
-        }
     }
 
     private void OnRoomSelected(string roomName)

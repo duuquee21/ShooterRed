@@ -6,51 +6,101 @@ public class WeaponPickup : NetworkBehaviour
     [Header("Configuración en el Editor")]
     public int editorWeaponId = 1; 
     public WeaponRarity editorRarity = WeaponRarity.Normal;
+    
+    public float respawnTime = 10f; 
 
     [Header("Efectos de Rareza")]
-    public Light rarityLight; // La bombilla en el suelo
-    public Renderer rarityBeam; // El pilar de luz (cilindro)
+    public Light rarityLight; 
+    public Renderer rarityBeam; 
 
     [Header("Animación Visual")]
-    public Transform visualModel; // El modelo 3D de tu arma
-    public float spinSpeed = 90f; // Velocidad de giro
-    public float bobSpeed = 2f;   // Velocidad de subida/bajada
-    public float bobHeight = 0.15f; // Cuánto sube y baja
+    public Transform visualModel; 
+    public Collider pickupCollider; 
+    public float spinSpeed = 90f; 
+    public float bobSpeed = 2f;   
+    public float bobHeight = 0.15f; 
     private float _startVisualY;
 
-    // Estado del Pickup en el mundo compartido
     [Networked] public int WeaponId { get; set; }
     [Networked] public int RarityLevel { get; set; } 
-    [Networked] public NetworkBool IsConsumed { get; set; }
+    [Networked] public NetworkBool IsConsumed { get; set; } 
+
+    [Networked] private TickTimer RespawnTimer { get; set; }
+    [Networked] private NetworkBool _wasConsumed { get; set; }
 
     private bool _canPickupLocal = false;
     private PlayerState _localPlayerState = null;
+    private Renderer[] _allRenderers; 
+    private int _lastRarityLevel = -1; 
 
     public override void Spawned()
     {
-        // Solo el Servidor/Host elige la rareza aleatoria
+        if (visualModel != null)
+        {
+            _startVisualY = visualModel.localPosition.y;
+            _allRenderers = visualModel.GetComponentsInChildren<Renderer>(true);
+        }
+
+        if (pickupCollider == null) pickupCollider = GetComponent<Collider>();
+
         if (HasStateAuthority)
         {
             WeaponId = editorWeaponId;
-            
-            // Tiramos un dado del 1 al 100
-            int luck = Random.Range(1, 101);
-
-            if (luck <= 60)      // 60% de probabilidad
-                RarityLevel = (int)WeaponRarity.Normal;
-            else if (luck <= 90) // 30% de probabilidad
-                RarityLevel = (int)WeaponRarity.Especial;
-            else                 // 10% de probabilidad
-                RarityLevel = (int)WeaponRarity.Epico;
-            
+            RerollRarity();
             IsConsumed = false;
+            _wasConsumed = false;
         }
 
-        // Después de elegirla, guardamos su posición inicial para flotar
-        if (visualModel != null)
-            _startVisualY = visualModel.localPosition.y;
-
         ApplyRarityVisuals();
+    }
+
+    public override void FixedUpdateNetwork()
+    {
+        if (!HasStateAuthority) return;
+
+        if (IsConsumed && !_wasConsumed)
+        {
+            RespawnTimer = TickTimer.CreateFromSeconds(Runner, respawnTime);
+        }
+        _wasConsumed = IsConsumed;
+
+        if (IsConsumed && RespawnTimer.Expired(Runner))
+        {
+            RerollRarity();
+            IsConsumed = false;
+            _wasConsumed = false;
+            RespawnTimer = TickTimer.None;
+        }
+    }
+
+    // ========================================================================
+    // NUEVO: EL HOST EJECUTA ESTO CUANDO EL CLIENTE SE LO PIDE
+    // ========================================================================
+    // RpcTargets.All → todos los clientes reciben este RPC y ocultan el pickup al instante
+    // Solo el StateAuthority actualiza IsConsumed (estado autoritativo para el respawn timer)
+    [Rpc(RpcSources.All, RpcTargets.All)]
+    public void RPC_ConsumeWeapon()
+    {
+        // Todos los clientes ocultan visualmente el pickup de forma inmediata
+        if (_allRenderers != null)
+            foreach (var r in _allRenderers)
+                if (r != null) r.enabled = false;
+
+        if (rarityLight  != null) rarityLight.enabled  = false;
+        if (rarityBeam   != null) rarityBeam.enabled   = false;
+        if (pickupCollider != null) pickupCollider.enabled = false;
+
+        // Solo el dueño del objeto actualiza la variable de red (para el timer de respawn)
+        if (HasStateAuthority && !IsConsumed)
+            IsConsumed = true;
+    }
+
+    private void RerollRarity()
+    {
+        int luck = Random.Range(1, 101);
+        if (luck <= 60)      RarityLevel = (int)WeaponRarity.Normal;
+        else if (luck <= 90) RarityLevel = (int)WeaponRarity.Especial;
+        else                 RarityLevel = (int)WeaponRarity.Epico;
     }
 
     private void ApplyRarityVisuals()
@@ -59,11 +109,7 @@ public class WeaponPickup : NetworkBehaviour
         if (RarityLevel == (int)WeaponRarity.Especial) rarityColor = Color.cyan; 
         if (RarityLevel == (int)WeaponRarity.Epico) rarityColor = new Color(0.6f, 0f, 1f); 
 
-        if (rarityLight != null)
-        {
-            rarityLight.color = rarityColor;
-        }
-
+        if (rarityLight != null) rarityLight.color = rarityColor;
         if (rarityBeam != null)
         {
             rarityBeam.material.color = new Color(rarityColor.r, rarityColor.g, rarityColor.b, 0.4f);
@@ -72,44 +118,65 @@ public class WeaponPickup : NetworkBehaviour
         }
     }
 
-    private void Update()
+    public override void Render()
     {
-        // ==========================================
-        // ANIMACIÓN: Rotar y Flotar
-        // ==========================================
-        if (visualModel != null)
+        if (Object == null || !Object.IsValid) return;
+
+        bool isVisible = !IsConsumed;
+        
+        if (_allRenderers != null)
+        {
+            foreach (var r in _allRenderers)
+            {
+                if (r != null && r.enabled != isVisible) r.enabled = isVisible;
+            }
+        }
+
+        if (rarityLight != null && rarityLight.enabled != isVisible) rarityLight.enabled = isVisible;
+        if (rarityBeam != null && rarityBeam.enabled != isVisible) rarityBeam.enabled = isVisible;
+        if (pickupCollider != null && pickupCollider.enabled != isVisible) pickupCollider.enabled = isVisible;
+
+        if (RarityLevel != _lastRarityLevel)
+        {
+            _lastRarityLevel = RarityLevel;
+            ApplyRarityVisuals();
+        }
+
+        if (IsConsumed && _canPickupLocal)
+        {
+            _canPickupLocal = false;
+            if (InteractionMessage.Instance != null) InteractionMessage.Instance.Show(""); 
+        }
+
+        if (isVisible && visualModel != null)
         {
             visualModel.Rotate(Vector3.up * spinSpeed * Time.deltaTime, Space.World);
             float newY = _startVisualY + Mathf.Sin(Time.time * bobSpeed) * bobHeight;
             visualModel.localPosition = new Vector3(visualModel.localPosition.x, newY, visualModel.localPosition.z);
         }
+    }
 
-        // ==========================================
-        // LÓGICA DE RECOGIDA (Input Local)
-        // ==========================================
+    private void Update()
+    {
+        if (Object == null || !Object.IsValid) return;
+
         if (_canPickupLocal && _localPlayerState != null && !IsConsumed)
         {
             if (Input.GetKeyDown(KeyCode.F))
             {
                 _canPickupLocal = false;
                 
-                // Feedback visual inmediato en la UI
                 if (InteractionMessage.Instance != null) 
                     InteractionMessage.Instance.Show("¡Arma recogida!", 2f); 
                 
-                // LA CLAVE ARQUITECTÓNICA: Usamos el PlayerState del cliente 
-                // para enviar el RPC, mandando el ID de esta caja.
                 _localPlayerState.RPC_InteractWithPickup(Object.Id);
             }
         }
     }
 
-    // ==========================================
-    // DETECCIÓN DEL JUGADOR
-    // ==========================================
     private void OnTriggerEnter(Collider other)
     {
-        if (IsConsumed) return;
+        if (Object == null || !Object.IsValid || IsConsumed) return;
         
         PlayerState ps = other.GetComponentInParent<PlayerState>();
         if (ps != null && ps.HasInputAuthority)
@@ -124,6 +191,8 @@ public class WeaponPickup : NetworkBehaviour
 
     private void OnTriggerExit(Collider other)
     {
+        if (Object == null || !Object.IsValid) return;
+
         PlayerState ps = other.GetComponentInParent<PlayerState>();
         if (ps != null && ps.HasInputAuthority)
         {

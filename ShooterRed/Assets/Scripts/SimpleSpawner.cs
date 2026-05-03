@@ -12,6 +12,9 @@ public class SimpleSpawner : NetworkBehaviour
     [Header("Prefab del Jugador")]
     public NetworkPrefabRef playerPrefab; // debe estar registrado en Fusion Network Project Config
 
+    [Header("Puntos de Spawn Definidos")]
+    public Transform[] spawnPoints;
+
     private void Awake()
     {
         Instance = this;
@@ -41,19 +44,24 @@ public class SimpleSpawner : NetworkBehaviour
     {
         Vector3 spawnPosition = GetSpawnPosition();
 
-        string playerName = NetworkManager.Instance != null ? NetworkManager.Instance.LocalPlayerName : "Jugador";
-
+        string playerName = NetworkManager.Instance != null ? NetworkManager.Instance.LocalPlayerName : "Jugador";        Debug.Log($"[SimpleSpawner] LocalPlayerName obtenido: '{playerName}'");
         // Runner.Spawn crea el prefab en todos los clientes simultÃ¡neamente
         // El tercer parÃ¡metro (player) le dice a Fusion quiÃ©n tiene InputAuthority sobre este objeto
         // El callback (runner, obj) => se ejecuta antes de que Spawned() del prefab se llame
         NetworkObject playerObject = Runner.Spawn(playerPrefab, spawnPosition, Quaternion.identity, player,
             (runner, obj) =>
             {
-                // Inicializamos la vida en el PlayerState antes de que Spawned() se ejecute
+                // Inicializamos la vida y el nombre en el PlayerState antes de que Spawned() se ejecute
                 PlayerState ps = obj.GetComponent<PlayerState>();
                 if (ps != null)
                 {
                     ps.Health = 100;
+                    // IMPORTANTE: Solo quien tiene StateAuthority puede asignar valores replicados
+                    if (ps.HasStateAuthority)
+                    {
+                        ps.PlayerName = playerName;
+                        Debug.Log($"[SimpleSpawner Callback] Asignando nombre '{playerName}' al PlayerState");
+                    }
                 }
 
                 Debug.Log("Jugador spawneado con datos iniciales: " + playerName);
@@ -94,20 +102,23 @@ public class SimpleSpawner : NetworkBehaviour
     }
 
     // Calcula una posiciÃ³n de spawn vÃ¡lida en el mapa
-    private Vector3 GetSpawnPosition()
+   private Vector3 GetSpawnPosition()
     {
-        // PosiciÃ³n aleatoria en X/Z, arriba en Y para luego bajarla al suelo
-        Vector3 randomPosition = new Vector3(Random.Range(-3f, 3f), 5f, Random.Range(-3f, 3f));
+        // 1. Si hemos asignado puntos en el Inspector, elegimos uno al azar
+        if (spawnPoints != null && spawnPoints.Length > 0)
+        {
+            int randomIndex = Random.Range(0, spawnPoints.Length);
+            return spawnPoints[randomIndex].position;
+        }
 
-        // Raycast hacia abajo buscando la capa "Ground"
+        // 2. Fallback: Si se te olvida poner puntos, usa el sistema antiguo
+        Vector3 randomPosition = new Vector3(Random.Range(-3f, 3f), 5f, Random.Range(-3f, 3f));
         if (Physics.Raycast(randomPosition, Vector3.down, out RaycastHit hit, 10f, LayerMask.GetMask("Ground")))
         {
-            // Colocamos al jugador justo encima del punto de impacto
             randomPosition.y = hit.point.y + 1f;
         }
         else
         {
-            // Fallback si no encontrÃ³ suelo: Y = 1 para no spawnar dentro del suelo
             randomPosition.y = 1f;
         }
 

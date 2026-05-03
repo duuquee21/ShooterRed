@@ -79,9 +79,16 @@ public class NetworkManager : MonoBehaviour, INetworkRunnerCallbacks
         Debug.Log("Conectando al Lobby para buscar salas...");
         
         // 1. Mostramos el panel vacío para que el jugador vea que está cargando
-        if (RoomListPanel.Instance != null)
+        // Búsqueda dinámica por si Instance no se inicializó aún
+        RoomListPanel panel = RoomListPanel.Instance ?? FindFirstObjectByType<RoomListPanel>();
+        if (panel != null)
         {
-            RoomListPanel.Instance.Show(new List<SessionInfo>()); 
+            RoomListPanel.Instance = panel; // aseguramos que Instance esté asignado
+            panel.Show(new List<SessionInfo>());
+        }
+        else
+        {
+            Debug.LogWarning("[NetworkManager] No se encontró RoomListPanel en la escena.");
         }
 
         // 2. Nos unimos al pasillo (Lobby Shared)
@@ -103,9 +110,10 @@ public class NetworkManager : MonoBehaviour, INetworkRunnerCallbacks
         Debug.Log($"[Fusion] Actualizando Lobby... {sessionList.Count} salas encontradas.");
         
         // Si el panel está activo en la pantalla, actualizamos los botones directamente
-        if (RoomListPanel.Instance != null && RoomListPanel.Instance.panel.activeInHierarchy)
+        RoomListPanel roomPanel = RoomListPanel.Instance ?? FindFirstObjectByType<RoomListPanel>();
+        if (roomPanel != null && roomPanel.panel.activeInHierarchy)
         {
-            RoomListPanel.Instance.Show(sessionList);
+            roomPanel.Show(sessionList);
         }
     }
 
