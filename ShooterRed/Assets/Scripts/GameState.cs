@@ -267,6 +267,17 @@ public class GameState : NetworkBehaviour
         return Players.TryGet(player, out data);
     }
 
+    [Rpc(RpcSources.All, RpcTargets.StateAuthority)]
+    public void RPC_RemovePlayer(PlayerRef player)
+    {
+        if (!HasStateAuthority) return;
+        if (Players.ContainsKey(player))
+        {
+            Players.Remove(player);
+            Debug.Log("[GameState] Jugador eliminado del diccionario: " + player);
+        }
+    }
+
     [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
     private void RPC_NotifyDeath(PlayerRef victim, float respawnDelay)
     {
@@ -468,6 +479,6 @@ public class GameState : NetworkBehaviour
             Runner.Shutdown();
         }
 
-        SceneManager.LoadScene("LobbyScene"); 
+        SceneManager.LoadScene("Menu"); 
     }
 }

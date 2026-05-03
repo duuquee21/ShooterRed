@@ -39,6 +39,11 @@ public class SessionCallbacks : MonoBehaviour, INetworkRunnerCallbacks
     public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
     {
         Debug.Log("[Session] Jugador salió: " + player);
+
+        if (GameState.Instance != null)
+        {
+            GameState.Instance.RPC_RemovePlayer(player);
+        }
     }
 
     public void OnSessionListUpdated(NetworkRunner runner, List<SessionInfo> sessionList)

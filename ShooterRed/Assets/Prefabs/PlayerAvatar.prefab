@@ -681,8 +681,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1f5ee4c0e78762749b26221bd33831e0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  moveSpeed: 5
-  jumpForce: 5
+  moveSpeed: 12
+  jumpForce: 8
   gravity: -20
   cameraHolder: {fileID: 8779666291537062599}
   mouseSensitivity: 2
