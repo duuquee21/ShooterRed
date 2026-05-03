@@ -1,30 +1,53 @@
+using Fusion;
 using UnityEngine;
 
-public class PlayerWeaponVisuals : MonoBehaviour
+public class PlayerWeaponVisuals : NetworkBehaviour
 {
-    [Header("Modelos 3D de las Armas")]
-    [Tooltip("El hueco 0 déjalo vacío. El hueco 1 pon el Rifle. El hueco 2 pon el Sniper.")]
-    public GameObject[] weaponModels;
+    private PlayerState _playerState;
 
-    // Esta función la llamará el PlayerState cuando cambie la variable de red
-    public void EquipWeaponVisual(int weaponId)
+    [Header("Modelos 3D (Hijos de la cámara)")]
+    public GameObject pistolModel;
+    public GameObject rifleModel;
+    public GameObject shotgunModel;
+    public GameObject sniperModel;
+
+    public override void Spawned()
     {
-        // 1. Apagamos TODAS las armas por seguridad
-        foreach (var model in weaponModels)
+        _playerState = GetComponent<PlayerState>();
+        RefreshVisuals();
+    }
+
+    // Esta función se llama desde el Callback de red de PlayerState
+    public void RefreshVisuals()
+    {
+        // Fallback por si acaso el Spawned no llegó a ejecutarse a tiempo
+        if (_playerState == null) 
+            _playerState = GetComponent<PlayerState>();
+
+        if (_playerState == null)
         {
-            if (model != null) model.SetActive(false);
+            Debug.LogError("[ERROR CRÍTICO] PlayerWeaponVisuals no puede encontrar el PlayerState en este objeto.");
+            return;
         }
 
-        // 2. Si el ID es 0 (Desarmado) o no existe, nos quedamos con las manos vacías
-        if (weaponId <= 0 || weaponId >= weaponModels.Length) 
-        {
-            return; 
-        }
+        int currentId = _playerState.CurrentWeaponId;
+        Debug.Log($"[DOMINÓ 3] Visuals recibiendo orden de mostrar el arma ID: {currentId}");
 
-        // 3. Encendemos SOLO el modelo 3D del arma que toca
-        if (weaponModels[weaponId] != null)
+        // 1. Apagar todo
+        if (pistolModel) pistolModel.SetActive(false);
+        else Debug.LogWarning("Falta asignar pistolModel en el Inspector");
+
+        if (rifleModel) rifleModel.SetActive(false);
+        if (shotgunModel) shotgunModel.SetActive(false);
+        if (sniperModel) sniperModel.SetActive(false);
+
+        // 2. Encender el actual
+        switch (currentId)
         {
-            weaponModels[weaponId].SetActive(true);
+            case 0: if (pistolModel) pistolModel.SetActive(true); break;
+            case 1: if (rifleModel) rifleModel.SetActive(true); break;
+            case 2: if (shotgunModel) shotgunModel.SetActive(true); break;
+            case 3: if (sniperModel) sniperModel.SetActive(true); break;
         }
     }
 }

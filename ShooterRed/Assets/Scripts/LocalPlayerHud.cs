@@ -10,14 +10,20 @@ public class LocalPlayerHud : MonoBehaviour
     [SerializeField] private int marginBottom = 20;
 
     private GUIStyle _style;
+    private GUIStyle _topCenterStyle; // Nuevo estilo para el reloj y líder
+
     private PlayerCombatData _data;
     private bool _hasData;
-    private int  _currentWeaponId;
-    private int  _currentWeaponRarity;
+    
+    // Nuevas variables para el estado global
+    private string _timerString = "";
+    private string _leaderString = "";
 
     private void Update()
     {
         _hasData = false;
+        _timerString = "";
+        _leaderString = "";
 
         if (NetworkManager.Instance == null || NetworkManager.Instance.Runner == null)
             return;
@@ -25,32 +31,95 @@ public class LocalPlayerHud : MonoBehaviour
         if (!NetworkManager.Instance.Runner.IsRunning)
             return;
 
-        if (!GameState.TryGetInstance(out GameState gameState) || gameState == null)
+        if (!GameState.TryGetInstance(out GameState gameState) || gameState == null || !gameState.IsNetworkReady)
             return;
 
+        // ==========================================
+        // 1. OBTENER DATOS DEL JUGADOR LOCAL (Tus Stats)
+        // ==========================================
         PlayerRef me = NetworkManager.Instance.Runner.LocalPlayer;
 
-        if (!gameState.TryGetPlayerData(me, out PlayerCombatData data))
-            return;
-
-        _data = data;
-        _hasData = true;
-
-        // Leer arma equipada desde PlayerState
-        NetworkObject myObj = NetworkManager.Instance.Runner.GetPlayerObject(me);
-        if (myObj != null)
+        if (gameState.TryGetPlayerData(me, out PlayerCombatData data))
         {
-            PlayerState ps = myObj.GetComponent<PlayerState>();
-            if (ps != null)
+            _data = data;
+            _hasData = true;
+        }
+
+        // ==========================================
+        // 2. OBTENER ESTADO DEL TIEMPO
+        // ==========================================
+        if (gameState.State == MatchState.Waiting)
+        {
+            _timerString = "ESPERANDO JUGADORES...";
+        }
+        else if (gameState.State == MatchState.Ended)
+        {
+            _timerString = "¡FIN DE LA PARTIDA!";
+        }
+        else if (gameState.State == MatchState.Playing)
+        {
+            float? remainingTime = gameState.MatchTimer.RemainingTime(NetworkManager.Instance.Runner);
+            if (remainingTime.HasValue)
             {
-                _currentWeaponId     = ps.CurrentWeaponId;
-                _currentWeaponRarity = ps.CurrentWeaponRarity;
+                int minutes = Mathf.FloorToInt(remainingTime.Value / 60);
+                int seconds = Mathf.FloorToInt(remainingTime.Value % 60);
+                _timerString = string.Format("{0:00}:{1:00}", minutes, seconds);
             }
+            else
+            {
+                _timerString = "00:00";
+            }
+        }
+
+        // ==========================================
+        // 3. OBTENER EL LÍDER DE KILLS
+        // ==========================================
+        int maxKills = -1;
+        PlayerRef currentLeader = PlayerRef.None;
+
+        foreach (var kvp in gameState.Players)
+        {
+            if (kvp.Value.Kills > maxKills)
+            {
+                maxKills = kvp.Value.Kills;
+                currentLeader = kvp.Key;
+            }
+        }
+
+        if (currentLeader != PlayerRef.None && maxKills > 0)
+        {
+            string leaderName = gameState.GetPlayerName(currentLeader);
+            _leaderString = $"LÍDER: {leaderName} ({maxKills} KILLS)";
+        }
+        else
+        {
+            _leaderString = "LÍDER: NINGUNO";
         }
     }
 
     private void OnGUI()
     {
+        // === DIBUJAR RELOJ Y LÍDER (Arriba al centro) ===
+        // Esto se dibuja siempre, incluso si tú estás muerto
+        if (_topCenterStyle == null)
+        {
+            _topCenterStyle = new GUIStyle(GUI.skin.label);
+            _topCenterStyle.fontStyle = FontStyle.Bold;
+            _topCenterStyle.alignment = TextAnchor.UpperCenter; // Centrado
+        }
+
+        // Reloj (Más grande y amarillo)
+        _topCenterStyle.fontSize = fontSize + 10;
+        _topCenterStyle.normal.textColor = Color.yellow;
+        GUI.Label(new Rect(0, 20, Screen.width, _topCenterStyle.fontSize + 10), _timerString, _topCenterStyle);
+
+        // Líder (Debajo del reloj, blanco)
+        _topCenterStyle.fontSize = fontSize;
+        _topCenterStyle.normal.textColor = Color.white;
+        GUI.Label(new Rect(0, 20 + _topCenterStyle.fontSize + 15, Screen.width, _topCenterStyle.fontSize + 10), _leaderString, _topCenterStyle);
+
+
+        // === DIBUJAR TUS ESTADÍSTICAS GLOBALES (Abajo a la izquierda) ===
         if (!_hasData)
             return;
 
@@ -70,14 +139,6 @@ public class LocalPlayerHud : MonoBehaviour
         GUI.Label(new Rect(x, y, 300, lineHeight), "HP:    " + _data.Health, _style);
         GUI.Label(new Rect(x, y + lineHeight, 300, lineHeight), "Score: " + _data.Score, _style);
         GUI.Label(new Rect(x, y + lineHeight * 2, 300, lineHeight), "Racha: " + _data.Streak, _style);
-
-        // Arma equipada con color según rareza
-        var def    = WeaponDatabase.Get(_currentWeaponId);
-        var rarity = (WeaponRarity)_currentWeaponRarity;
-        GUIStyle weaponStyle = new GUIStyle(_style);
-        weaponStyle.normal.textColor = rarity.RarityColor();
-        GUI.Label(new Rect(x, y + lineHeight * 3, 350, lineHeight),
-            $"Arma: {def.DisplayName}  [{rarity.Label()}]", weaponStyle);
 
         // Recompensas de racha disponibles
         GUIStyle rewardStyle = new GUIStyle(GUI.skin.label);

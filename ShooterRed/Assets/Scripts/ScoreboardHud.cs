@@ -28,9 +28,7 @@ public class ScoreboardHud : MonoBehaviour
 
     private void OnGUI()
     {
-        if (!Input.GetKey(toggleKey))
-            return;
-
+        // 1. Primero comprobamos que la red y el GameState existen
         if (NetworkManager.Instance == null || NetworkManager.Instance.Runner == null)
             return;
 
@@ -40,12 +38,21 @@ public class ScoreboardHud : MonoBehaviour
         if (!GameState.TryGetInstance(out GameState gs) || gs == null)
             return;
 
+        // 2. Comprobamos si la partida ha terminado
+        bool matchEnded = gs.State == MatchState.Ended;
+
+        // 3. LA MAGIA: Si NO estamos pulsando TAB y la partida NO ha terminado, salimos.
+        // Si la partida ha terminado, esta línea no se cumple y sigue dibujando.
+        if (!Input.GetKey(toggleKey) && !matchEnded)
+            return;
+
         EnsureStyles();
 
         List<ScoreboardEntry> entries = BuildEntries(gs);
         entries.Sort((a, b) => b.Score.CompareTo(a.Score));
 
-        DrawScoreboard(entries);
+        // Le pasamos la variable matchEnded para dibujar un título especial si se acabó
+        DrawScoreboard(entries, matchEnded); 
     }
 
     private List<ScoreboardEntry> BuildEntries(GameState gs)
@@ -67,26 +74,43 @@ public class ScoreboardHud : MonoBehaviour
         return entries;
     }
 
-    private void DrawScoreboard(List<ScoreboardEntry> entries)
+    private void DrawScoreboard(List<ScoreboardEntry> entries, bool matchEnded)
     {
         int localId = NetworkManager.Instance.Runner.LocalPlayer.PlayerId;
 
         float rowH = fontSize + 10;
         float panelW = 500f;
-        float panelH = rowH * (entries.Count + 2) + 30f;
+        
+        // Si terminó la partida, hacemos el panel un poco más alto para que quepa el título
+        float titleOffset = matchEnded ? 40f : 0f; 
+        float panelH = rowH * (entries.Count + 2) + 30f + titleOffset;
+        
         float px = (Screen.width - panelW) * 0.5f;
         float py = (Screen.height - panelH) * 0.5f;
 
-        // Fondo semitransparente
-        GUI.color = new Color(0f, 0f, 0f, 0.75f);
+        // Fondo semitransparente (lo oscurecemos un poquito más para que resalte)
+        GUI.color = new Color(0f, 0f, 0f, 0.85f);
         GUI.DrawTexture(new Rect(px - 12, py - 12, panelW + 24, panelH + 24), Texture2D.whiteTexture);
         GUI.color = Color.white;
+
+        float y = py;
+
+        // ==========================================
+        // NUEVO: Título final si la partida terminó
+        // ==========================================
+        if (matchEnded)
+        {
+            GUIStyle titleStyle = new GUIStyle(_headerStyle);
+            titleStyle.alignment = TextAnchor.MiddleCenter;
+            titleStyle.fontSize = fontSize + 8; // Letra más grande
+            GUI.Label(new Rect(px, y, panelW, 30f), "¡RESULTADOS FINALES!", titleStyle);
+            y += titleOffset; // Bajamos la tabla para no pisar el título
+        }
 
         float col0 = px;
         float col1 = px + 220;
         float col2 = px + 320;
         float col3 = px + 420;
-        float y = py;
 
         // Cabecera
         GUI.Label(new Rect(col0, y, 210, rowH), "JUGADOR", _headerStyle);
